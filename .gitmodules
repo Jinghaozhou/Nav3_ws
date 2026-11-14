@@ -1,0 +1,12 @@
+[submodule "modules/Nav3_Sensor_ws"]
+	path = modules/Nav3_Sensor_ws
+	url = /home/jinghao/Nav3_Sensor_ws
+[submodule "modules/Nav3_Localization_ws"]
+	path = modules/Nav3_Localization_ws
+	url = /home/jinghao/Nav3_Localization_ws
+[submodule "modules/Nav3_Global_planner_ws"]
+	path = modules/Nav3_Global_planner_ws
+	url = /home/jinghao/Nav3_Global_planner_ws
+[submodule "modules/Nav3_Local_Planner_ws"]
+	path = modules/Nav3_Local_Planner_ws
+	url = /home/jinghao/Nav3_Local_Planner_ws

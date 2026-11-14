@@ -1,0 +1,10 @@
+/build/
+/install/
+/log/
+/.venvs/
+/data/maps/*
+!/data/maps/README.md
+/data/bags/*
+!/data/bags/README.md
+__pycache__/
+*.py[cod]
