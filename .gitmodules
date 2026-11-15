@@ -1,12 +1,12 @@
 [submodule "modules/Nav3_Sensor_ws"]
 	path = modules/Nav3_Sensor_ws
-	url = /home/jinghao/Nav3_Sensor_ws
+	url = https://github.com/Jinghaozhou/Nav3_Sensor_ws.git
 [submodule "modules/Nav3_Localization_ws"]
 	path = modules/Nav3_Localization_ws
-	url = /home/jinghao/Nav3_Localization_ws
+	url = https://github.com/Jinghaozhou/Nav3_Localization_ws.git
 [submodule "modules/Nav3_Global_planner_ws"]
 	path = modules/Nav3_Global_planner_ws
-	url = /home/jinghao/Nav3_Global_planner_ws
+	url = https://github.com/Jinghaozhou/Nav3_Global_planner_ws.git
 [submodule "modules/Nav3_Local_Planner_ws"]
 	path = modules/Nav3_Local_Planner_ws
-	url = /home/jinghao/Nav3_Local_Planner_ws
+	url = https://github.com/Jinghaozhou/Nav3_Local_Planner_ws.git
