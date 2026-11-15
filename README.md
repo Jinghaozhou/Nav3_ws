@@ -2,7 +2,7 @@
 
 Nav3 将传感器里程计、全局定位、三维全局规划和局部规划组织为四个独立的 ROS 2 Humble 工作空间。模块间通过 ROS 2 Topic、Service 和 TF 交换数据，不直接调用彼此的算法源码。本仓库用 Git 子模块固定各模块版本，并保存集成时使用的数据目录。
 
-**当前状态：**四个模块的代码已经纳入子模块；`scripts/prepare_non_ros.sh` 已提供统一的非 ROS 依赖准备入口。`src/nav3_bringup` 仍是预留目录，尚无主工作空间统一 `colcon` 构建脚本、总启动文件或 Navigation Manager。整机闭环仍需联调验证。
+**当前状态：**四个模块的代码已经纳入子模块；`scripts/prepare_non_ros.sh` 和 `scripts/build_ros.sh` 分别提供非 ROS 依赖准备与主工作空间统一 ROS 构建入口。`src/nav3_bringup` 仍是预留目录，尚无总启动文件或 Navigation Manager。整机闭环仍需联调验证。
 
 ## 代码结构
 
@@ -16,7 +16,7 @@ Nav3_ws/
 ├── src/nav3_bringup/            # 预留：统一 launch 与集成配置
 ├── data/maps/                   # 本机全局地图，不纳入 Git
 ├── data/bags/                   # 本机回放数据，不纳入 Git
-└── scripts/                     # 非 ROS 依赖准备；统一构建和环境加载待实现
+└── scripts/                     # 非 ROS 依赖准备、ROS 统一构建和环境加载
 ```
 
 四个 `modules/*` 都是 Git 子模块，各自保留源码结构和 Git 历史。子模块内部的 `src/` 是其 ROS 2 包目录，部分模块还保留 `vendor/`、`legacy/` 或演示资源。包级细节见[传感器](modules/Nav3_Sensor_ws/README.md)、[定位](modules/Nav3_Localization_ws/README.md)、[PCT](modules/Nav3_Global_planner_ws/README.md)和[SCAN](modules/Nav3_Local_Planner_ws/README.md)说明。
@@ -105,7 +105,16 @@ scripts/prepare_non_ros.sh --check
 
 脚本不执行 `sudo`、不安装系统 apt 包，也不构建 ROS 包。若提示缺少 `ensurepip`，先安装 `python3.10-venv`，然后重新运行脚本。完整选项、产物位置和系统依赖检查命令见[脚本说明](scripts/README.md)。
 
-ROS 包目前仍按各子模块 README 独立构建和启动，主工作空间统一 `colcon` 构建入口尚待实现。启用传感器的自适应窗口或关键帧候选时，启动传感器前需先加载定位消息包的环境。统一参数传递和联合启动尚待在 `src/nav3_bringup` 实现。
+统一构建四个子模块的 ROS 包并加载主工作空间环境：
+
+```bash
+scripts/build_ros.sh --check
+scripts/build_ros.sh --jobs 4
+# 在新终端中执行：
+source /home/jinghao/Nav3_ws/scripts/source_env.bash
+```
+
+脚本限定四个子模块的 `src/` 为包发现目录，把所有 ROS 包安装到主目录的 `install/`，不会加载子模块的旧 `install/`。具体用法、默认构建范围和验收命令见[脚本说明](scripts/README.md)。统一参数传递和联合启动尚待在 `src/nav3_bringup` 实现。
 
 ## 仓库与部署说明
 

@@ -38,4 +38,27 @@ rosdep check --from-paths \
 
 移动工作空间后，若 CMake 缓存仍指向旧源码路径，脚本会停止并提示对应目录；请先移走该构建目录再重试。PCT 虚拟环境的激活脚本也含绝对路径，移动工作空间后应重新创建 `.venv_pct`。脚本只检查 CuPy 安装，不验证 GPU 驱动或地图生成。
 
-主工作空间的统一 `colcon` 构建和环境加载入口尚待实现；运行本脚本只完成其前置依赖准备。
+运行本脚本只完成统一 ROS 构建的前置依赖准备。
+
+## 统一构建 ROS 包
+
+先准备上述非 ROS 依赖，再在主工作空间根目录执行：
+
+```bash
+scripts/build_ros.sh --check
+scripts/build_ros.sh --jobs 4
+```
+
+`--check` 只读检查非 ROS 依赖和 ROS 包发现情况；默认构建从四个子模块的 `src/` 中发现的全部 ROS 包，包括 `scan_planner_demo`，不会扫描 `legacy/`、`vendor/` 或 PCT 原生库源码。脚本从 ROS 2 Humble 和 PCT 虚拟环境构建，使用定位子模块的 `external/` 查找算法库。`--jobs` 控制单包编译并行数；为了限制内存峰值，`colcon` 一次构建一个包。构建期测试默认关闭，测试与 Gazebo 演示运行需另行执行。
+
+全部 ROS 包统一安装到主目录的 `install/`，构建过程写入主目录的 `build/`、`log/`；不会使用子模块已有的 `install/`。构建脚本结束前还会检查每个发现的包均指向主目录 `install/`。构建成功后，在**新终端**加载环境：
+
+```bash
+source /home/jinghao/Nav3_ws/scripts/source_env.bash
+ros2 pkg prefix fast_lio
+ros2 pkg prefix kiss_matcher_localization
+ros2 pkg prefix pct_planner
+ros2 pkg prefix scan_planner
+```
+
+脚本本身按所在位置计算主目录；如果工作空间被移动，修改上面示例命令的路径即可。统一环境加载 ROS 2、PCT 虚拟环境、主目录的 `install/` 和运行时原生库路径，并将 `PCT_MAP_DIR` 设为主目录的 `data/maps/`。需要规划时仍应在 launch 参数中显式指定地图文件和缓存目录。`src/nav3_bringup` 目前没有 ROS 包，总启动入口尚待实现。
