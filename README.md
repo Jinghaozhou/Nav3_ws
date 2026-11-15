@@ -2,7 +2,7 @@
 
 Nav3 将传感器里程计、全局定位、三维全局规划和局部规划组织为四个独立的 ROS 2 Humble 工作空间。模块间通过 ROS 2 Topic、Service 和 TF 交换数据，不直接调用彼此的算法源码。本仓库用 Git 子模块固定各模块版本，并保存集成时使用的数据目录。
 
-**当前状态：**四个模块的代码已经纳入子模块；`src/nav3_bringup` 和 `scripts` 仍是预留目录，尚无统一构建脚本、总启动文件或 Navigation Manager。各模块按各自说明独立构建、启动，整机闭环仍需联调验证。
+**当前状态：**四个模块的代码已经纳入子模块；`scripts/prepare_non_ros.sh` 已提供统一的非 ROS 依赖准备入口。`src/nav3_bringup` 仍是预留目录，尚无主工作空间统一 `colcon` 构建脚本、总启动文件或 Navigation Manager。整机闭环仍需联调验证。
 
 ## 代码结构
 
@@ -16,7 +16,7 @@ Nav3_ws/
 ├── src/nav3_bringup/            # 预留：统一 launch 与集成配置
 ├── data/maps/                   # 本机全局地图，不纳入 Git
 ├── data/bags/                   # 本机回放数据，不纳入 Git
-└── scripts/                     # 预留：统一构建和环境加载
+└── scripts/                     # 非 ROS 依赖准备；统一构建和环境加载待实现
 ```
 
 四个 `modules/*` 都是 Git 子模块，各自保留源码结构和 Git 历史。子模块内部的 `src/` 是其 ROS 2 包目录，部分模块还保留 `vendor/`、`legacy/` 或演示资源。包级细节见[传感器](modules/Nav3_Sensor_ws/README.md)、[定位](modules/Nav3_Localization_ws/README.md)、[PCT](modules/Nav3_Global_planner_ws/README.md)和[SCAN](modules/Nav3_Local_Planner_ws/README.md)说明。
@@ -91,7 +91,21 @@ MID360 + IMU ──> FAST-LIO ── odom / local_map ──> 定位 ── map�
 
 SCAN 的 `unknown_space_policy` 默认为 `occupied`；只有点云占据证据而没有自由空间证据时，保守配置会保持零速度。`free_inside_bounds` 需在确认地图覆盖、可通行性和停车能力后显式选择。回放时所有参与节点应统一设置 `use_sim_time`，并使用相同的 `ROS_DOMAIN_ID`。
 
-目前应按照各子模块 README 完成依赖准备、构建和独立启动。启用传感器的自适应窗口或关键帧候选时，启动传感器前需先加载定位消息包的环境。统一参数传递和联合启动尚待在 `src/nav3_bringup` 实现。
+## 非 ROS 依赖准备
+
+在主工作空间根目录运行：
+
+```bash
+git submodule update --init --recursive
+scripts/prepare_non_ros.sh --jobs 4
+scripts/prepare_non_ros.sh --check
+```
+
+默认模式按顺序增量构建 Livox SDK2、定位算法库 ROBIN / KISS Matcher / small_gicp，以及 PCT 的 GTSAM、OSQP 和 Python 虚拟环境。产物保留在各子模块被 Git 忽略的目录中。`--jobs 4` 指定并行编译数；`--check` 只读检查产物和固定版本的 Python 依赖，全部就绪时返回 0。也可以在构建前单独运行 `--check` 查看缺项，此时因依赖未就绪而返回非零状态是正常的。
+
+脚本不执行 `sudo`、不安装系统 apt 包，也不构建 ROS 包。若提示缺少 `ensurepip`，先安装 `python3.10-venv`，然后重新运行脚本。完整选项、产物位置和系统依赖检查命令见[脚本说明](scripts/README.md)。
+
+ROS 包目前仍按各子模块 README 独立构建和启动，主工作空间统一 `colcon` 构建入口尚待实现。启用传感器的自适应窗口或关键帧候选时，启动传感器前需先加载定位消息包的环境。统一参数传递和联合启动尚待在 `src/nav3_bringup` 实现。
 
 ## 仓库与部署说明
 
