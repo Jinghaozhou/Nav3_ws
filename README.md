@@ -4,6 +4,8 @@ Nav3 将传感器里程计、全局定位、三维全局规划和局部规划组
 
 **当前状态：**四个模块的代码已经纳入子模块；`scripts/prepare_non_ros.sh` 和 `scripts/build_ros.sh` 分别提供非 ROS 依赖准备与主工作空间统一 ROS 构建入口。`src/nav3_bringup` 仍是预留目录，尚无总启动文件或 Navigation Manager。整机闭环仍需联调验证。
 
+联调现状见[联调记录](report/联调记录.md)和[问题排查与解决建议](report/三维导航系统联调问题排查与解决建议.md)。
+
 ## 代码结构
 
 ```text
@@ -51,6 +53,7 @@ MID360 + IMU ──> FAST-LIO ── odom / local_map ──> 定位 ── map�
 | `/fast_lio/local_map` | `sensor_msgs/msg/PointCloud2` | FAST-LIO → 定位、SCAN | `odom` 中的完整滑动窗口快照，默认约 1 Hz。 |
 | `/fast_lio/local_map_global` | `sensor_msgs/msg/PointCloud2` | FAST-LIO → 定位 | 始终使用较长窗口，供可选初始化与恢复。 |
 | `/localization/status` | `kiss_matcher_localization/msg/LocalizationResult` | 定位 → 监控、可选窗口切换 | 区分本次 `matched` 与已更新 TF 的 `applied`；Reliable、Transient Local。 |
+| `/localization/navigation_allowed` | `std_msgs/msg/Bool` | 定位 → SCAN（联合启动时接入） | 定位模块按最近成功时间、连续失败、局部地图和里程计 TF 新鲜度持续发布；Reliable、Volatile。 |
 | `/localization/keyframe_candidates` | `kiss_matcher_localization/msg/KeyframeCandidates` | 可选检索器 → 定位 | 短时点云与多个 `map → odom` 候选，含地图和库的哈希。 |
 | `/pct/global_path` | `nav_msgs/msg/Path` | PCT → SCAN | `map` 中的三维路径；Reliable、Transient Local；空路径撤销旧任务。 |
 | `/scan_planner/status` | `scan_planner_msgs/msg/PlannerStatus` | SCAN → 监控/任务层 | 20 Hz 状态心跳，含运动许可和失败原因。 |
@@ -59,7 +62,7 @@ MID360 + IMU ──> FAST-LIO ── odom / local_map ──> 定位 ── map�
 | `/localization/relocalize` | `kiss_matcher_localization/srv/Relocalize` | 操作者/任务层 → 定位 | 对最新局部地图尝试定位；`apply_if_safe` 控制合格结果是否应用。 |
 | `/pct/plan` | `pct_planner_interfaces/srv/Plan` | 操作者/任务层 → PCT | 接收 `map` 中的起终点，返回成功标志、路径及说明。 |
 
-定位另提供 `/localization/set_region` 和 `/localization/accept_candidate`；PCT 提供 `/pct/publish_cost_map`；传感器提供 `/map_save`。SCAN 可选订阅 `/scan_planner/localization_permission`（`std_msgs/msg/Bool`），由独立适配层根据定位质量控制运行许可。完整接口与 QoS 见[定位协议](modules/Nav3_Localization_ws/src/localization/NAVIGATION_INTERFACE.md)、[PCT 说明](modules/Nav3_Global_planner_ws/README.md)及[SCAN 协议](modules/Nav3_Local_Planner_ws/src/scan_planner/docs/interfaces.md)。
+定位另提供 `/localization/set_region` 和 `/localization/accept_candidate`；PCT 提供 `/pct/publish_cost_map`；传感器提供 `/map_save`。联合启动时须设置 SCAN 的 `require_localization_permission:=true`、`localization_permission_topic:=/localization/navigation_allowed`。许可发布已实现，定位成功后的实机联动尚待验证。完整接口与 QoS 见[定位协议](modules/Nav3_Localization_ws/src/localization/NAVIGATION_INTERFACE.md)、[PCT 说明](modules/Nav3_Global_planner_ws/README.md)及[SCAN 协议](modules/Nav3_Local_Planner_ws/src/scan_planner/docs/interfaces.md)。
 
 ### 关键自定义消息结构
 
@@ -76,7 +79,7 @@ MID360 + IMU ──> FAST-LIO ── odom / local_map ──> 定位 ── map�
 
 `data/maps/building_split_space.pcd` 是本机当前选定的统一全局参考地图，含 `region_id` 标签；文件不纳入 Git。其 SHA-256 为 `c84fba59d8c6342aa72c5c53599152295e27948ff0e3317d95fd9f3c12c1ab55`，与定位模块的 `space_2` 区域初始候选及传感器包内 40 帧关键帧库记录的地图哈希一致。区域名称表和 15 个初始候选已在定位子模块中；候选基于特定安装姿态的实验数据，仍需现场核验。
 
-定位 launch 可通过 `map_pcd` 指向主项目地图；传感器启用关键帧候选时，可通过 `keyframe_map` 指向同一文件；PCT 通过 `map_dir` 与 `map` 选择 PCD。SCAN 正式运行不直接读取全局 PCD。**尚未验证 PCT 对这份约 880 MiB 地图的加载时间、内存占用及生成路径与定位的几何对齐。**如需规划用抽稀地图，必须保留同一 `map` 坐标系并记录其与原图的派生关系。子模块内的 `building2_9.pcd`、`3_part.pcd` 等属于独立演示或历史场景，不应与当前定位候选混用。
+定位 launch 可通过 `map_pcd` 指向主项目地图；传感器启用关键帧候选时，可通过 `keyframe_map` 指向同一文件；PCT 通过 `map_dir` 与 `map` 选择 PCD。SCAN 正式运行不直接读取全局 PCD。**本机已用 RTX 4060 对这份约 880 MiB 地图生成 Tomogram，并从缓存规划出一条 10 点测试路径；峰值内存占用、更多起终点的可行性及路径与定位的几何对齐仍待验证。**如需规划用抽稀地图，必须保留同一 `map` 坐标系并记录其与原图的派生关系。子模块内的 `building2_9.pcd`、`3_part.pcd` 等属于独立演示或历史场景，不应与当前定位候选混用。
 
 `data/bags/` 用于本机回放数据。地图、bag、构建结果均不随主仓库提交；换机部署时需要单独准备，并核对地图哈希和坐标定义。
 
@@ -85,7 +88,7 @@ MID360 + IMU ──> FAST-LIO ── odom / local_map ──> 定位 ── map�
 | 模块 | 配置文件及启动入口 | 集成时优先核对的参数 |
 | --- | --- | --- |
 | 传感器 | [`mid360_robot.yaml`](modules/Nav3_Sensor_ws/src/mid360_bringup/config/mid360_robot.yaml)、[`MID360_config.json`](modules/Nav3_Sensor_ws/src/livox_ros_driver2/config/MID360_config.json)、[`mid360_mapping.launch.py`](modules/Nav3_Sensor_ws/src/mid360_bringup/launch/mid360_mapping.launch.py) | `driver`、`use_sim_time`、`config_file`、`driver_config`、`window_time`（默认 120 s）、`tracking_window_time`（默认 30 s）、`adaptive_window`、`keyframe_candidates`、`keyframe_map`。组合启动话题名在 YAML 的 `mid360_bringup.ros__parameters.topics` 中设置。 |
-| 定位 | [`continuous_localization.yaml`](modules/Nav3_Localization_ws/src/localization/config/continuous_localization.yaml)、[`navigation_localization.launch.yaml`](modules/Nav3_Localization_ws/src/localization/launch/navigation_localization.launch.yaml) | `map_pcd`、`region_labels_csv`、`initial_region`、`region_multistart_enabled`、`region_seed_file`、`local_map_topic`、`local_map_reliability`、`config_path`。连续配置含重叠率、重试周期和 TF 修正门槛。 |
+| 定位 | [`continuous_localization.yaml`](modules/Nav3_Localization_ws/src/localization/config/continuous_localization.yaml)、[`navigation_localization.launch.yaml`](modules/Nav3_Localization_ws/src/localization/launch/navigation_localization.launch.yaml) | `map_pcd`、`region_labels_csv`、`initial_region`、`region_multistart_enabled`、`region_seed_file`、`local_map_topic`、`local_map_reliability`、`config_path`。连续配置含重叠率、重试周期、TF 修正门槛和 `navigation_permission.*` 许可阈值。 |
 | PCT | [`pct_planner.yaml`](modules/Nav3_Global_planner_ws/src/pct_planner/config/pct_planner.yaml)、[`pct_planner.launch.py`](modules/Nav3_Global_planner_ws/src/pct_planner/launch/pct_planner.launch.py) | `map`、`map_dir`、`cache_dir`、`resolution`、`ground_h`、`slice_dh`、机器人净空、坡度、台阶与安全膨胀参数。默认地图仍是 `building2_9.pcd`，集成时须显式覆盖。 |
 | SCAN | [`integration.yaml`](modules/Nav3_Local_Planner_ws/src/scan_planner/config/integration.yaml)、`planner.yaml`、`controller.yaml`、[`scan_planner.launch.py`](modules/Nav3_Local_Planner_ws/src/scan_planner/launch/scan_planner.launch.py) | `odom_topic`、`local_map_topic`、`path_topic`、`cmd_vel_topic`、四个 frame、`velocity_source`、`path_height_mode`、`unknown_space_policy`、`require_localization_permission`。 |
 
