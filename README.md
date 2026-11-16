@@ -2,7 +2,7 @@
 
 Nav3 将传感器里程计、全局定位、三维全局规划和局部规划组织为四个独立的 ROS 2 Humble 工作空间。模块间通过 ROS 2 Topic、Service 和 TF 交换数据，不直接调用彼此的算法源码。本仓库用 Git 子模块固定各模块版本，并保存集成时使用的数据目录。
 
-**当前状态：**四个模块的代码已经纳入子模块；`scripts/prepare_non_ros.sh` 和 `scripts/build_ros.sh` 分别提供非 ROS 依赖准备与主工作空间统一 ROS 构建入口。`src/nav3_bringup` 仍是预留目录，尚无总启动文件或 Navigation Manager。整机闭环仍需联调验证。
+**当前状态：**四个模块的代码已经纳入子模块；主仓库已有独立的 `nav3_navigation_manager` 任务管理包。`scripts/prepare_non_ros.sh` 和 `scripts/build_ros.sh` 提供依赖准备与统一构建入口。`src/nav3_bringup` 仍是预留目录，尚无总启动文件；整机闭环仍需联调验证。
 
 联调现状见[联调记录](report/联调记录.md)和[问题排查与解决建议](report/三维导航系统联调问题排查与解决建议.md)。
 
@@ -16,6 +16,7 @@ Nav3_ws/
 │   ├── Nav3_Global_planner_ws/  # PCT 核心、ROS 节点、接口包和可视化
 │   └── Nav3_Local_Planner_ws/   # SCAN 核心、ROS 节点、消息包和演示
 ├── src/nav3_bringup/            # 预留：统一 launch 与集成配置
+├── src/nav3_navigation_manager/ # 导航目标 Action、任务状态和受管理路径
 ├── data/maps/                   # 本机全局地图，不纳入 Git
 ├── data/bags/                   # 本机回放数据，不纳入 Git
 └── scripts/                     # 非 ROS 依赖准备、ROS 统一构建和环境加载
@@ -31,11 +32,12 @@ Nav3_ws/
 | 全局定位 | `kiss_matcher_localization`，另有可视化与记录包 | 将 `odom` 中的局部地图与全局 PCD 配准，成功应用后发布 `map → odom`。当前持续导航入口使用区域或关键帧候选加 VGICP；KISS 粗配准保留在历史演示入口。 |
 | 全局规划 | `pct_planner`、`pct_planner_interfaces`、`pct_planner_viz` | 从离线 PCD 建立 Tomogram，按服务请求输出 `map` 中的三维路径。 |
 | 局部规划与控制 | `scan_planner`、`scan_planner_msgs`、`scan_planner_demo` | 消费里程计、局部地图、TF 和全局路径，输出局部轨迹、状态与平面速度。 |
+| 导航任务管理 | `nav3_navigation_manager` | 接收 `map` 中的三维目标，调用 PCT，发布受管理路径，依据 SCAN 状态完成、取消或中止任务。 |
 
 ```text
 MID360 + IMU ──> FAST-LIO ── odom / local_map ──> 定位 ── map→odom TF
-                          └───────────────> SCAN <── global_path ── PCT <── 全局 PCD
-                                               └── cmd_vel / status
+                          └───────────────> SCAN <── managed_path ── 任务管理器 <── 目标
+                                               └── cmd_vel / status       └── PCT 规划服务 <── 全局 PCD
 ```
 
 核心 TF 链为 `map → odom → base_link → lidar`：定位发布 `map → odom`，FAST-LIO 发布 `odom → base_link`，传感器启动包发布机体到 IMU、雷达的静态外参。每段 TF 只应有一个发布者。当前 FAST-LIO 的 `base_link` 位于 **IMU 原点**；若机器人碰撞或底盘控制参考点不同，需要真实安装外参及相应的 SCAN `robot_frame`、`control_frame` 配置。
@@ -55,14 +57,18 @@ MID360 + IMU ──> FAST-LIO ── odom / local_map ──> 定位 ── map�
 | `/localization/status` | `kiss_matcher_localization/msg/LocalizationResult` | 定位 → 监控、可选窗口切换 | 区分本次 `matched` 与已更新 TF 的 `applied`；Reliable、Transient Local。 |
 | `/localization/navigation_allowed` | `std_msgs/msg/Bool` | 定位 → SCAN（联合启动时接入） | 定位模块按最近成功时间、连续失败、局部地图和里程计 TF 新鲜度持续发布；Reliable、Volatile。 |
 | `/localization/keyframe_candidates` | `kiss_matcher_localization/msg/KeyframeCandidates` | 可选检索器 → 定位 | 短时点云与多个 `map → odom` 候选，含地图和库的哈希。 |
-| `/pct/global_path` | `nav_msgs/msg/Path` | PCT → SCAN | `map` 中的三维路径；Reliable、Transient Local；空路径撤销旧任务。 |
-| `/scan_planner/status` | `scan_planner_msgs/msg/PlannerStatus` | SCAN → 监控/任务层 | 20 Hz 状态心跳，含运动许可和失败原因。 |
+| `/pct/global_path` | `nav_msgs/msg/Path` | PCT → 诊断/可视化 | PCT 保留的最近一次规划结果；整机任务运行时 SCAN 不直接订阅。 |
+| `/nav3/managed_path` | `nav_msgs/msg/Path` | 任务管理器 → SCAN（联合启动时接入） | 验证后的 `map` 中三维路径；Reliable、Transient Local；空路径撤销任务。 |
+| `/nav3/navigate_to_pose` | `nav3_navigation_manager/action/NavigateToPose` | 操作者/上层任务 → 任务管理器 | 接收明确 XYZ 的 `map` 目标，返回任务反馈与结果；暂不执行终点朝向。 |
+| `/nav3/navigation_state` | `std_msgs/msg/String` | 任务管理器 → 监控 | 就绪等待原因和任务阶段。 |
+| `/scan_planner/status` | `scan_planner_msgs/msg/PlannerStatus` | SCAN → 任务管理器/监控 | 20 Hz 状态心跳，含运动许可和失败原因。 |
+| `/scan_planner/execution_state` | `scan_planner_msgs/msg/ExecutionState` | SCAN 控制器 → 任务管理器/监控 | 控制器的路径编号、轨迹编号和实际跟踪状态。 |
 | `/scan_planner/local_path` | `nav_msgs/msg/Path` | SCAN → 可视化 | `odom` 中的局部轨迹，失效时清空。 |
 | `/cmd_vel` | `geometry_msgs/msg/Twist` | SCAN → 底盘接口 | `control_frame` 中的平面 `vx/vy/wz`；底盘仍需自身的命令超时停车。 |
 | `/localization/relocalize` | `kiss_matcher_localization/srv/Relocalize` | 操作者/任务层 → 定位 | 对最新局部地图尝试定位；`apply_if_safe` 控制合格结果是否应用。 |
-| `/pct/plan` | `pct_planner_interfaces/srv/Plan` | 操作者/任务层 → PCT | 接收 `map` 中的起终点，返回成功标志、路径及说明。 |
+| `/pct/plan` | `pct_planner_interfaces/srv/Plan` | 任务管理器 → PCT | 接收 `map` 中的起终点，返回成功标志、路径及说明。 |
 
-定位另提供 `/localization/set_region` 和 `/localization/accept_candidate`；PCT 提供 `/pct/publish_cost_map`；传感器提供 `/map_save`。联合启动时须设置 SCAN 的 `require_localization_permission:=true`、`localization_permission_topic:=/localization/navigation_allowed`。许可发布已实现，定位成功后的实机联动尚待验证。完整接口与 QoS 见[定位协议](modules/Nav3_Localization_ws/src/localization/NAVIGATION_INTERFACE.md)、[PCT 说明](modules/Nav3_Global_planner_ws/README.md)及[SCAN 协议](modules/Nav3_Local_Planner_ws/src/scan_planner/docs/interfaces.md)。
+定位另提供 `/localization/set_region` 和 `/localization/accept_candidate`；PCT 提供 `/pct/publish_cost_map`；传感器提供 `/map_save`。联合启动时须设置 SCAN 的 `path_topic:=/nav3/managed_path`、`require_localization_permission:=true`、`localization_permission_topic:=/localization/navigation_allowed`。管理器的模拟成功、取消、规划失败、许可撤销和控制器未跟踪测试已通过，实机联动尚待验证。完整接口与 QoS 见[任务管理器](src/nav3_navigation_manager/README.md)、[定位协议](modules/Nav3_Localization_ws/src/localization/NAVIGATION_INTERFACE.md)、[PCT 说明](modules/Nav3_Global_planner_ws/README.md)及[SCAN 协议](modules/Nav3_Local_Planner_ws/src/scan_planner/docs/interfaces.md)。
 
 ### 关键自定义消息结构
 
@@ -72,8 +78,9 @@ MID360 + IMU ──> FAST-LIO ── odom / local_map ──> 定位 ── map�
 | `KeyframeCandidates` | `cloud`、`map_to_odom[]`、`ids[]`、`scores[]`、`region_id`、`map_sha256`、`library_sha256`、`profile_sha256` | 可选关键帧检索输入，定位节点校验地图、库和配置版本。 |
 | `Plan` 服务 | 请求 `start`、`goal`；响应 `success`、`path`、`message` | 起终点均为 `PoseStamped`，`frame_id` 必须为 `map`。 |
 | `PlannerStatus` | `path_id`、`traj_id`、`state`、`motion_allowed`、`reason`、`goal` | 状态包括等待、运行、到达、规划失败、定位不可用、数据过期和 TF 大幅修正。 |
+| `NavigateToPose` Action | `target`；结果 `success`、`message`；反馈 `phase`、`detail`、`current_pose`、`distance_remaining` | 管理一次三维目标的规划、执行和取消。 |
 
-精确定义分别位于 [`localization/msg`、`srv`](modules/Nav3_Localization_ws/src/localization/)、[`pct_planner_interfaces`](modules/Nav3_Global_planner_ws/src/pct_planner_interfaces/)和[`scan_planner_msgs`](modules/Nav3_Local_Planner_ws/src/scan_planner_msgs/)。
+精确定义分别位于 [`localization/msg`、`srv`](modules/Nav3_Localization_ws/src/localization/)、[`pct_planner_interfaces`](modules/Nav3_Global_planner_ws/src/pct_planner_interfaces/)、[`scan_planner_msgs`](modules/Nav3_Local_Planner_ws/src/scan_planner_msgs/)和[管理器 Action](src/nav3_navigation_manager/action/NavigateToPose.action)。
 
 ## 地图与数据
 
@@ -91,6 +98,7 @@ MID360 + IMU ──> FAST-LIO ── odom / local_map ──> 定位 ── map�
 | 定位 | [`continuous_localization.yaml`](modules/Nav3_Localization_ws/src/localization/config/continuous_localization.yaml)、[`navigation_localization.launch.yaml`](modules/Nav3_Localization_ws/src/localization/launch/navigation_localization.launch.yaml) | `map_pcd`、`region_labels_csv`、`initial_region`、`region_multistart_enabled`、`region_seed_file`、`local_map_topic`、`local_map_reliability`、`config_path`。连续配置含重叠率、重试周期、TF 修正门槛和 `navigation_permission.*` 许可阈值。 |
 | PCT | [`pct_planner.yaml`](modules/Nav3_Global_planner_ws/src/pct_planner/config/pct_planner.yaml)、[`pct_planner.launch.py`](modules/Nav3_Global_planner_ws/src/pct_planner/launch/pct_planner.launch.py) | `map`、`map_dir`、`cache_dir`、`resolution`、`ground_h`、`slice_dh`、机器人净空、坡度、台阶与安全膨胀参数。默认地图仍是 `building2_9.pcd`，集成时须显式覆盖。 |
 | SCAN | [`integration.yaml`](modules/Nav3_Local_Planner_ws/src/scan_planner/config/integration.yaml)、`planner.yaml`、`controller.yaml`、[`scan_planner.launch.py`](modules/Nav3_Local_Planner_ws/src/scan_planner/launch/scan_planner.launch.py) | `odom_topic`、`local_map_topic`、`path_topic`、`cmd_vel_topic`、四个 frame、`velocity_source`、`path_height_mode`、`unknown_space_policy`、`require_localization_permission`。 |
+| 任务管理器 | [`navigation_manager.yaml`](src/nav3_navigation_manager/config/navigation_manager.yaml)、[`navigation_manager.launch.py`](src/nav3_navigation_manager/launch/navigation_manager.launch.py) | 目标 Action、定位许可、SCAN 状态、PCT 服务和受管理路径话题；许可、TF、规划和任务超时阈值。 |
 
 SCAN 的 `unknown_space_policy` 默认为 `occupied`；只有点云占据证据而没有自由空间证据时，保守配置会保持零速度。`free_inside_bounds` 需在确认地图覆盖、可通行性和停车能力后显式选择。回放时所有参与节点应统一设置 `use_sim_time`，并使用相同的 `ROS_DOMAIN_ID`。
 
@@ -108,7 +116,7 @@ scripts/prepare_non_ros.sh --check
 
 脚本不执行 `sudo`、不安装系统 apt 包，也不构建 ROS 包。若提示缺少 `ensurepip`，先安装 `python3.10-venv`，然后重新运行脚本。完整选项、产物位置和系统依赖检查命令见[脚本说明](scripts/README.md)。
 
-统一构建四个子模块的 ROS 包并加载主工作空间环境：
+统一构建主仓库任务管理器和四个子模块的 ROS 包，并加载主工作空间环境：
 
 ```bash
 scripts/build_ros.sh --check
@@ -117,7 +125,7 @@ scripts/build_ros.sh --jobs 4
 source /home/jinghao/Nav3_ws/scripts/source_env.bash
 ```
 
-脚本限定四个子模块的 `src/` 为包发现目录，把所有 ROS 包安装到主目录的 `install/`，不会加载子模块的旧 `install/`。具体用法、默认构建范围和验收命令见[脚本说明](scripts/README.md)。统一参数传递和联合启动尚待在 `src/nav3_bringup` 实现。
+脚本限定主仓库及四个子模块的 `src/` 为包发现目录，把 14 个 ROS 包安装到主目录的 `install/`，不会加载子模块的旧 `install/`。具体用法、默认构建范围和验收命令见[脚本说明](scripts/README.md)。统一参数传递和联合启动尚待在 `src/nav3_bringup` 实现。
 
 ## 仓库与部署说明
 

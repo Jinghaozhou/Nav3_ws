@@ -9,8 +9,9 @@ global_planner="$root/modules/Nav3_Global_planner_ws"
 local_planner="$root/modules/Nav3_Local_Planner_ws"
 pct_venv="$global_planner/.venv_pct"
 ros_setup=/opt/ros/humble/setup.bash
-base_paths=("$sensor/src" "$localization/src" "$global_planner/src" "$local_planner/src")
+base_paths=("$root/src" "$sensor/src" "$localization/src" "$global_planner/src" "$local_planner/src")
 required_packages=(
+  nav3_navigation_manager
   livox_ros_driver2 fast_lio mid360_bringup
   kiss_matcher_localization pcd_cloud_publisher localization_visualizer localization_path_recorder
   pct_planner_interfaces pct_planner pct_planner_viz
@@ -55,7 +56,7 @@ for source_dir in "${base_paths[@]}"; do
 done
 "$root/scripts/prepare_non_ros.sh" --check || die "非 ROS 依赖尚未就绪"
 
-# Limit discovery to the four ROS source trees. In particular, legacy/, vendor/
+# Limit discovery to the root and four module ROS source trees. In particular, legacy/, vendor/
 # and the PCT native third-party sources must not become colcon packages.
 package_names="$(colcon list --base-paths "${base_paths[@]}" --names-only)" || die "colcon 无法列出 ROS 包"
 for package in "${required_packages[@]}"; do

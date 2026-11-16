@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>nav3_navigation_manager</name>
+  <version>0.1.0</version>
+  <description>Navigation task orchestration for the Nav3 workspace</description>
+  <maintainer email="zhoujinghao188@gmail.com">Jinghao</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <member_of_group>rosidl_interface_packages</member_of_group>
+  <depend>action_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>pct_planner_interfaces</depend>
+  <depend>scan_planner_msgs</depend>
+  <exec_depend>ros2launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

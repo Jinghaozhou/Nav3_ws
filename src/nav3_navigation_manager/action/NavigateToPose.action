@@ -1,0 +1,9 @@
+geometry_msgs/PoseStamped target
+---
+bool success
+string message
+---
+string phase
+string detail
+geometry_msgs/PoseStamped current_pose
+float64 distance_remaining

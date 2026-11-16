@@ -1,0 +1,21 @@
+nav3_navigation_manager:
+  ros__parameters:
+    map_frame: map
+    base_frame: base_link
+    action_name: /nav3/navigate_to_pose
+    localization_permission_topic: /localization/navigation_allowed
+    scan_status_topic: /scan_planner/status
+    scan_execution_topic: /scan_planner/execution_state
+    pct_plan_service: /pct/plan
+    managed_path_topic: /nav3/managed_path
+    state_topic: /nav3/navigation_state
+    permission_timeout_sec: 1.0
+    scan_status_timeout_sec: 1.0
+    scan_execution_timeout_sec: 1.0
+    execution_loss_timeout_sec: 2.0
+    tf_max_age_sec: 0.75
+    scan_ack_timeout_sec: 5.0
+    planning_timeout_sec: 120.0
+    max_task_duration_sec: 600.0
+    path_endpoint_tolerance_m: 0.5
+    max_start_motion_m: 0.5
