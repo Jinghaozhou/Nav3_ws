@@ -10,3 +10,7 @@
 [submodule "modules/Nav3_Local_Planner_ws"]
 	path = modules/Nav3_Local_Planner_ws
 	url = https://github.com/Jinghaozhou/Nav3_Local_Planner_ws.git
+[submodule "modules/Nav3_Chassis_ws"]
+	path = modules/Nav3_Chassis_ws
+	url = https://github.com/Jinghaozhou/Nav3_Chassis_ws.git
+	branch = main

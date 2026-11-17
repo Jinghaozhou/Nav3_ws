@@ -1,10 +1,10 @@
 # Nav3 三维导航系统
 
-Nav3 将传感器里程计、全局定位、三维全局规划和局部规划组织为四个独立的 ROS 2 Humble 工作空间。模块间通过 ROS 2 Topic、Service 和 TF 交换数据，不直接调用彼此的算法源码。本仓库用 Git 子模块固定各模块版本，并保存集成时使用的数据目录。
+Nav3 将传感器里程计、全局定位、三维全局规划和局部规划组织为四个独立的 ROS 2 Humble 工作空间，另以独立工作空间保存 Go2 底盘控制模块。模块间通过 ROS 2 Topic、Service 和 TF 交换数据，不直接调用彼此的算法源码。本仓库用 Git 子模块固定各模块版本，并保存集成时使用的数据目录。
 
-**当前状态：**四个模块的代码已经纳入子模块；主仓库已有独立的 `nav3_navigation_manager` 任务管理包和 `nav3_bringup` 联合启动包。`scripts/prepare_non_ros.sh` 和 `scripts/build_ros.sh` 提供依赖准备与统一构建入口。整机闭环仍需联调验证。
+**当前状态：**四个导航模块和 Go2 底盘工作空间已纳入子模块；主仓库已有独立的 `nav3_navigation_manager` 任务管理包和 `nav3_bringup` 联合启动包。`scripts/prepare_non_ros.sh` 和 `scripts/build_ros.sh` 提供四个导航模块的依赖准备与统一构建入口。底盘尚未纳入统一构建或启动，整机闭环仍需联调验证。
 
-联调现状见[联调记录](report/联调记录.md)和[问题排查与解决建议](report/三维导航系统联调问题排查与解决建议.md)。
+联调现状见[联调记录](report/联调记录.md)和[问题排查与解决建议](report/三维导航系统联调问题排查与解决建议.md)。面向汇报的概览见[主仓库架构与联调进度说明](report/Nav3主仓库架构与联调进度说明.md)，团队交接方式见[模块协作与主仓库联调流程](report/Nav3模块协作与主仓库联调流程.md)。
 
 ## 代码结构
 
@@ -14,7 +14,8 @@ Nav3_ws/
 │   ├── Nav3_Sensor_ws/          # Livox MID360、FAST-LIO、mid360_bringup
 │   ├── Nav3_Localization_ws/    # 导航定位、可视化、轨迹记录和 PCD 调试发布
 │   ├── Nav3_Global_planner_ws/  # PCT 核心、ROS 节点、接口包和可视化
-│   └── Nav3_Local_Planner_ws/   # SCAN 核心、ROS 节点、消息包和演示
+│   ├── Nav3_Local_Planner_ws/   # SCAN 核心、ROS 节点、消息包和演示
+│   └── Nav3_Chassis_ws/         # Go2 速度桥接与底盘控制，暂未联合启动
 ├── src/nav3_bringup/            # 四模块和任务管理器的联合启动、PCT 地图预热
 ├── src/nav3_navigation_manager/ # 导航目标 Action、任务状态和受管理路径
 ├── data/maps/                   # 本机全局地图，不纳入 Git
@@ -22,7 +23,7 @@ Nav3_ws/
 └── scripts/                     # 非 ROS 依赖准备、ROS 统一构建和环境加载
 ```
 
-四个 `modules/*` 都是 Git 子模块，各自保留源码结构和 Git 历史。子模块内部的 `src/` 是其 ROS 2 包目录，部分模块还保留 `vendor/`、`legacy/` 或演示资源。包级细节见[传感器](modules/Nav3_Sensor_ws/README.md)、[定位](modules/Nav3_Localization_ws/README.md)、[PCT](modules/Nav3_Global_planner_ws/README.md)和[SCAN](modules/Nav3_Local_Planner_ws/README.md)说明。
+五个 `modules/*` 都是 Git 子模块，各自保留源码结构和 Git 历史。子模块内部的 `src/` 是其 ROS 2 包目录，部分模块还保留 `vendor/`、`legacy/` 或演示资源。包级细节见[传感器](modules/Nav3_Sensor_ws/README.md)、[定位](modules/Nav3_Localization_ws/README.md)、[PCT](modules/Nav3_Global_planner_ws/README.md)、[SCAN](modules/Nav3_Local_Planner_ws/README.md)和[底盘](modules/Nav3_Chassis_ws/README.md)说明。
 
 ## 模块划分与数据流
 
@@ -34,6 +35,7 @@ Nav3_ws/
 | 局部规划与控制 | `scan_planner`、`scan_planner_msgs`、`scan_planner_demo` | 消费里程计、局部地图、TF 和全局路径，输出局部轨迹、状态与平面速度。 |
 | 导航任务管理 | `nav3_navigation_manager` | 接收 `map` 中的三维目标，调用 PCT，发布受管理路径，依据 SCAN 状态完成、取消或中止任务。 |
 | 统一启动 | `nav3_bringup` | 连接四模块的启动参数，检查统一地图与区域候选，预热 PCT 后启动任务管理器。 |
+| 底盘控制（待接入） | `go2control` | 将 `/cmd_vel` 转为 Go2 的运动指令；目前未纳入主工作空间的统一构建与 bringup。 |
 
 ```text
 MID360 + IMU ──> FAST-LIO ── odom / local_map ──> 定位 ── map→odom TF
@@ -139,4 +141,4 @@ ros2 launch nav3_bringup nav3.launch.py
 
 ## 仓库与部署说明
 
-`.gitmodules` 已配置为 `Jinghaozhou` 账户下的四个 GitHub 仓库。各仓库推送完成后，可使用 `git clone --recurse-submodules` 获取主仓库及固定版本的子模块。子模块固定的是各原仓库当时已提交的版本；原工作空间中未提交的修改、被忽略的地图及构建结果不会自动进入本仓库。地图和 bag 仍须单独准备。
+`.gitmodules` 已配置为 `Jinghaozhou` 账户下的五个 GitHub 仓库。各仓库推送完成后，可使用 `git clone --recurse-submodules` 获取主仓库及固定版本的子模块。子模块固定的是各原仓库当时已提交的版本；原工作空间中未提交的修改、被忽略的地图及构建结果不会自动进入本仓库。地图和 bag 仍须单独准备。
