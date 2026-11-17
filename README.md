@@ -2,7 +2,7 @@
 
 Nav3 将传感器里程计、全局定位、三维全局规划和局部规划组织为四个独立的 ROS 2 Humble 工作空间，另以独立工作空间保存 Go2 底盘控制模块。模块间通过 ROS 2 Topic、Service 和 TF 交换数据，不直接调用彼此的算法源码。本仓库用 Git 子模块固定各模块版本，并保存集成时使用的数据目录。
 
-**当前状态：**四个导航模块和 Go2 底盘工作空间已纳入子模块；主仓库已有独立的 `nav3_navigation_manager` 任务管理包和 `nav3_bringup` 联合启动包。`scripts/prepare_non_ros.sh` 和 `scripts/build_ros.sh` 提供四个导航模块的依赖准备与统一构建入口。底盘尚未纳入统一构建或启动，整机闭环仍需联调验证。
+**当前状态：**四个导航模块和 Go2 底盘工作空间已纳入子模块；主仓库已有独立的 `nav3_navigation_manager` 任务管理包和 `nav3_bringup` 联合启动包。`scripts/prepare_non_ros.sh` 准备导航模块原生依赖，`scripts/build_ros.sh` 统一构建五个子模块和主仓库的 ROS 包。bringup 支持按参数启动 Go2 速度桥接，实机闭环仍需联调验证。
 
 联调现状见[联调记录](report/联调记录.md)和[问题排查与解决建议](report/三维导航系统联调问题排查与解决建议.md)。面向汇报的概览见[主仓库架构与联调进度说明](report/Nav3主仓库架构与联调进度说明.md)，团队交接方式见[模块协作与主仓库联调流程](report/Nav3模块协作与主仓库联调流程.md)。
 
@@ -15,8 +15,8 @@ Nav3_ws/
 │   ├── Nav3_Localization_ws/    # 导航定位、可视化、轨迹记录和 PCD 调试发布
 │   ├── Nav3_Global_planner_ws/  # PCT 核心、ROS 节点、接口包和可视化
 │   ├── Nav3_Local_Planner_ws/   # SCAN 核心、ROS 节点、消息包和演示
-│   └── Nav3_Chassis_ws/         # Go2 速度桥接与底盘控制，暂未联合启动
-├── src/nav3_bringup/            # 四模块和任务管理器的联合启动、PCT 地图预热
+│   └── Nav3_Chassis_ws/         # Go2 速度桥接与底盘控制
+├── src/nav3_bringup/            # 导航模块、任务管理器与可选底盘桥接的联合启动
 ├── src/nav3_navigation_manager/ # 导航目标 Action、任务状态和受管理路径
 ├── data/maps/                   # 本机全局地图，不纳入 Git
 ├── data/bags/                   # 本机回放数据，不纳入 Git
@@ -34,8 +34,8 @@ Nav3_ws/
 | 全局规划 | `pct_planner`、`pct_planner_interfaces`、`pct_planner_viz` | 从离线 PCD 建立 Tomogram，按服务请求输出 `map` 中的三维路径。 |
 | 局部规划与控制 | `scan_planner`、`scan_planner_msgs`、`scan_planner_demo` | 消费里程计、局部地图、TF 和全局路径，输出局部轨迹、状态与平面速度。 |
 | 导航任务管理 | `nav3_navigation_manager` | 接收 `map` 中的三维目标，调用 PCT，发布受管理路径，依据 SCAN 状态完成、取消或中止任务。 |
-| 统一启动 | `nav3_bringup` | 连接四模块的启动参数，检查统一地图与区域候选，预热 PCT 后启动任务管理器。 |
-| 底盘控制（待接入） | `go2control` | 将 `/cmd_vel` 转为 Go2 的运动指令；目前未纳入主工作空间的统一构建与 bringup。 |
+| 统一启动 | `nav3_bringup` | 连接四个导航模块的启动参数，检查统一地图与区域候选，预热 PCT 后启动任务管理器与可选的底盘桥接。 |
+| 底盘控制 | `go2control` | 订阅 `/cmd_vel` 并转为 Go2 的运动指令；统一启动默认关闭，可先空跑检查。 |
 
 ```text
 MID360 + IMU ──> FAST-LIO ── odom / local_map ──> 定位 ── map→odom TF
@@ -120,7 +120,7 @@ scripts/prepare_non_ros.sh --check
 
 脚本不执行 `sudo`、不安装系统 apt 包，也不构建 ROS 包。若提示缺少 `ensurepip`，先安装 `python3.10-venv`，然后重新运行脚本。完整选项、产物位置和系统依赖检查命令见[脚本说明](scripts/README.md)。
 
-统一构建主仓库任务管理器和四个子模块的 ROS 包，并加载主工作空间环境：
+统一构建主仓库任务管理器和五个子模块的 ROS 包，并加载主工作空间环境：
 
 ```bash
 scripts/build_ros.sh --check
@@ -129,7 +129,7 @@ scripts/build_ros.sh --jobs 4
 source /home/jinghao/Nav3_ws/scripts/source_env.bash
 ```
 
-脚本限定主仓库及四个子模块的 `src/` 为包发现目录，把 15 个 ROS 包安装到主目录的 `install/`，不会加载子模块的旧 `install/`。具体用法、默认构建范围和验收命令见[脚本说明](scripts/README.md)。
+脚本限定主仓库及五个子模块的 `src/` 为包发现目录，把 16 个 ROS 包安装到主目录的 `install/`，不会加载子模块的旧 `install/`。具体用法、默认构建范围和验收命令见[脚本说明](scripts/README.md)。
 
 联合启动入口：
 
@@ -137,7 +137,7 @@ source /home/jinghao/Nav3_ws/scripts/source_env.bash
 ros2 launch nav3_bringup nav3.launch.py
 ```
 
-默认使用实体 MID360、统一全局地图和 `space_2` 区域候选；首次启动区域可用 `initial_region:=space_3` 等参数修改。更换区域时默认不沿用 `space_2` 候选，需另传对应的 `region_seed_file` 才启用多候选。当前不接底盘，SCAN 直接发布 `/cmd_vel`。PCT 地图预热完成后才启动管理器；管理器仍需等待首次定位和 SCAN 状态才能接收目标。参数、示例和启动条件见[统一启动包说明](src/nav3_bringup/README.md)。
+默认使用实体 MID360、统一全局地图和 `space_2` 区域候选；首次启动区域可用 `initial_region:=space_3` 等参数修改。更换区域时默认不沿用 `space_2` 候选，需另传对应的 `region_seed_file` 才启用多候选。底盘桥接默认关闭；`chassis:=true` 先以空跑模式订阅 SCAN 的 `/cmd_vel`，实机连接还需显式传入 `chassis_dry_run:=false`。PCT 地图预热完成后才启动管理器和已启用的底盘桥接；管理器仍需等待首次定位和 SCAN 状态才能接收目标。参数、示例和启动条件见[统一启动包说明](src/nav3_bringup/README.md)。
 
 ## 仓库与部署说明
 

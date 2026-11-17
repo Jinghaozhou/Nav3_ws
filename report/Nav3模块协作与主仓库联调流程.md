@@ -9,7 +9,7 @@ Nav3 采用一个主仓库和五个 Git 子模块仓库。各模块负责人在�
 | 负责人 | 负责仓库 | 主要工作 |
 | --- | --- | --- |
 | 彦男 | `Nav3_Sensor_ws`、`Nav3_Localization_ws` | MID360、FAST-LIO、局部地图、全局定位、定位状态和导航许可。 |
-| 楚昕 | `Nav3_Global_planner_ws`、`Nav3_Chassis_ws` | PCT 全局规划；Go2 速度桥接与底盘接口。底盘暂未接入主项目 bringup。 |
+| 楚昕 | `Nav3_Global_planner_ws`、`Nav3_Chassis_ws` | PCT 全局规划；Go2 速度桥接与底盘接口。主项目 bringup 可选启动桥接，实机尚未联调验收。 |
 | 主仓库负责人 | `Nav3_Local_Planner_ws`、`Nav3_ws` | SCAN、导航任务管理器、统一启动、跨模块参数、整机联调与验收记录。 |
 
 GitHub 协作权限只授予队员负责的模块仓库；主仓库及局部规划仓库由主仓库负责人维护。各仓库可禁止强制推送和删除 `main`，同时保留本流程所需的直接推送方式。
@@ -74,7 +74,7 @@ git push origin main
 1. 当前统一全局地图为主工作空间 `data/maps/building_split_space.pcd`，SHA-256 为 `c84fba59d8c6342aa72c5c53599152295e27948ff0e3317d95fd9f3c12c1ab55`。地图和 bag 不纳入 Git；需要测试的队员另行取得相同数据并核对哈希。更换地图或雷达安装姿态前，须同步评估定位候选、PCT 缓存及坐标定义。
 2. 核心 TF 链为 `map → odom → base_link → lidar`。定位负责 `map → odom`，FAST-LIO 负责 `odom → base_link`；同一段 TF 不应由两个模块同时发布。
 3. 传感器向定位和 SCAN 提供 `/fast_lio/local_map`、`/fast_lio/odom`；定位发布 `/localization/navigation_allowed`。任务管理器调用 `/pct/plan` 后发布 `/nav3/managed_path`，SCAN 只消费这条受管理路径并输出 `/cmd_vel`。跨模块修改应先告知受影响模块的负责人。
-4. 当前没有接入底盘。`/cmd_vel` 输出、首次定位和整机导航应分别记录验收结果，不能以节点启动成功代替实际功能通过。
+4. 底盘桥接已加入统一启动并完成空跑订阅，尚未连接实机。`/cmd_vel` 输出、首次定位和整机导航应分别记录验收结果，不能以节点启动成功代替实际功能通过。
 
 ## 四、交接时的最低验收证据
 
@@ -83,7 +83,7 @@ git push origin main
 | 传感器 | 雷达与 IMU 输入、里程计、局部地图、健康状态及停止过程。 | 话题频率、时间戳、`odom → base_link`、定位与 SCAN 能否接收。 |
 | 定位 | 地图与候选配置、`LocalizationResult`、`map → odom`、导航许可。 | 首次定位是否 `applied=true`，许可是否随数据失效而撤销。 |
 | PCT | `/pct/publish_cost_map` 与 `/pct/plan` 的成功和失败样例。 | 地图一致性、路径 `map` 坐标和三维高度、管理器调用结果。 |
-| 底盘 | Go2 桥接的空跑、速度限幅、输入超时和零速度行为。 | 接入前核对 `/cmd_vel`、机体坐标系、停车机制；当前不执行实机联动。 |
+| 底盘 | Go2 桥接的空跑、速度限幅、输入超时和零速度行为。 | 空跑核对 `/cmd_vel` 已完成；实机前核对机体坐标系和停车机制。 |
 | 主仓库与 SCAN | 统一构建、bringup、管理器任务流和 SCAN 状态。 | 真实路径进入 `/nav3/managed_path` 后的轨迹、取消、故障与零速度。 |
 
 出现无法快进、接口不匹配或测试失败时，先保留现场和日志，与另一方确认提交基线；不使用 `git push --force` 覆盖对方历史。

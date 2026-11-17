@@ -28,7 +28,8 @@ scripts/prepare_non_ros.sh --check
 source /opt/ros/humble/setup.bash
 rosdep check --from-paths \
   modules/Nav3_Sensor_ws/src modules/Nav3_Localization_ws/src \
-  modules/Nav3_Global_planner_ws/src modules/Nav3_Local_Planner_ws/src src \
+  modules/Nav3_Global_planner_ws/src modules/Nav3_Local_Planner_ws/src \
+  modules/Nav3_Chassis_ws/src src \
   --ignore-src --rosdistro humble
 ```
 
@@ -49,7 +50,7 @@ scripts/build_ros.sh --check
 scripts/build_ros.sh --jobs 4
 ```
 
-`--check` 只读检查非 ROS 依赖和 ROS 包发现情况；默认构建从主仓库 `src/` 和四个子模块的 `src/` 中发现的全部 ROS 包，包括 `nav3_bringup`、`nav3_navigation_manager` 与 `scan_planner_demo`，不会扫描 `legacy/`、`vendor/` 或 PCT 原生库源码。脚本从 ROS 2 Humble 和 PCT 虚拟环境构建，使用定位子模块的 `external/` 查找算法库。`--jobs` 控制单包编译并行数；为了限制内存峰值，`colcon` 一次构建一个包。构建期测试默认关闭，测试与 Gazebo 演示运行需另行执行。
+`--check` 只读检查非 ROS 依赖和 ROS 包发现情况；默认构建从主仓库 `src/` 和五个子模块的 `src/` 中发现的全部 ROS 包，包括 `nav3_bringup`、`nav3_navigation_manager`、`scan_planner_demo` 与 `go2control`，不会扫描 `legacy/`、`vendor/` 或 PCT 原生库源码。脚本从 ROS 2 Humble 和 PCT 虚拟环境构建，使用定位子模块的 `external/` 查找算法库。`--jobs` 控制单包编译并行数；为了限制内存峰值，`colcon` 一次构建一个包。构建期测试默认关闭，测试与 Gazebo 演示运行需另行执行。
 
 全部 ROS 包统一安装到主目录的 `install/`，构建过程写入主目录的 `build/`、`log/`；不会使用子模块已有的 `install/`。构建脚本结束前还会检查每个发现的包均指向主目录 `install/`。构建成功后，在**新终端**加载环境：
 
@@ -60,6 +61,7 @@ ros2 pkg prefix kiss_matcher_localization
 ros2 pkg prefix pct_planner
 ros2 pkg prefix scan_planner
 ros2 pkg prefix nav3_navigation_manager
+ros2 pkg prefix go2control
 ```
 
 脚本本身按所在位置计算主目录；如果工作空间被移动，修改上面示例命令的路径即可。统一环境加载 ROS 2、PCT 虚拟环境、主目录的 `install/` 和运行时原生库路径，并将 `PCT_MAP_DIR` 设为主目录的 `data/maps/`。联合启动由 `nav3_bringup` 显式传入地图路径，使用方式见[统一启动说明](../src/nav3_bringup/README.md)。

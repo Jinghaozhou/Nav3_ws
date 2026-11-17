@@ -1,4 +1,4 @@
-"""Start the four Nav3 modules and the independent navigation manager."""
+"""Start the Nav3 navigation modules, manager, and optional Go2 bridge."""
 
 import csv
 import hashlib
@@ -86,6 +86,10 @@ def _launch(context):
         raise RuntimeError("pct_startup_timeout_sec 必须为正数")
     if value("driver") == "true" and value("use_sim_time") == "true":
         raise RuntimeError("实体 MID360 驱动不可与 use_sim_time:=true 同时启动")
+    chassis_enabled = value("chassis") == "true"
+    chassis_dry_run = value("chassis_dry_run") == "true"
+    if chassis_enabled and not chassis_dry_run and value("use_sim_time") == "true":
+        raise RuntimeError("回放仿真时间时不可连接实体底盘；使用 chassis_dry_run:=true")
 
     def include(package, file, arguments, yaml_launch=False):
         source = Path(get_package_share_directory(package)) / "launch" / file
@@ -140,21 +144,49 @@ def _launch(context):
         output="screen", arguments=["--timeout", value("pct_startup_timeout_sec")],
     )
 
+    chassis_actions = []
+    if chassis_enabled:
+        chassis_config = Path(value("chassis_config")).expanduser().resolve()
+        if not chassis_config.is_file():
+            raise RuntimeError(f"底盘配置文件不存在：{chassis_config}")
+        chassis_sdk_root = Path(value("chassis_sdk_root")).expanduser().resolve()
+        if not chassis_dry_run and not (chassis_sdk_root / "vendor/unitree_sdk2_python").is_dir():
+            raise RuntimeError(f"底盘 SDK 目录不存在：{chassis_sdk_root}")
+        bridge = Node(
+            package="go2control", executable="cmd_vel_bridge",
+            name="go2_cmd_vel_bridge", output="screen",
+            parameters=[str(chassis_config), {
+                "interface": value("chassis_interface"),
+                "sdk_root": str(chassis_sdk_root),
+                "dry_run": chassis_dry_run,
+            }],
+            remappings=[("cmd_vel", "/cmd_vel")],
+        )
+        chassis_actions = [bridge]
+
     def after_prewarm(event, _context):
         if event.returncode == 0:
-            return [GroupAction(scoped=True, actions=[manager])]
+            return [GroupAction(scoped=True, actions=[manager, *chassis_actions])]
         return [EmitEvent(event=Shutdown(reason="PCT 地图准备失败"))]
 
-    return [
+    actions = [
         SetParameter(name="use_sim_time", value=common_time == "true"),
         GroupAction(scoped=True, actions=[sensor]),
         GroupAction(scoped=True, actions=[localization]),
         pct,
         GroupAction(scoped=True, actions=[scan]),
+    ]
+    if chassis_actions:
+        actions.append(RegisterEventHandler(OnProcessExit(
+            target_action=chassis_actions[0],
+            on_exit=[EmitEvent(event=Shutdown(reason="Go2 底盘桥接退出"))],
+        )))
+    actions.extend([
         RegisterEventHandler(OnProcessExit(
             target_action=prewarm, on_exit=after_prewarm)),
         prewarm,
-    ]
+    ])
+    return actions
 
 
 def generate_launch_description():
@@ -162,6 +194,7 @@ def generate_launch_description():
     # The root build uses --merge-install; source_env.bash exports PCT_MAP_DIR.
     fallback_map_dir = install_prefix.parent / "data/maps"
     default_map_dir = Path(os.environ.get("PCT_MAP_DIR", fallback_map_dir))
+    chassis_root = install_prefix.parent / "modules/Nav3_Chassis_ws"
     return LaunchDescription([
         DeclareLaunchArgument("map_pcd", default_value=str(default_map_dir / "building_split_space.pcd")),
         DeclareLaunchArgument("initial_region", default_value="space_2"),
@@ -170,6 +203,12 @@ def generate_launch_description():
         DeclareLaunchArgument("driver", default_value="true", choices=["true", "false"]),
         DeclareLaunchArgument("use_sim_time", default_value="false", choices=["true", "false"]),
         DeclareLaunchArgument("rviz", default_value="false", choices=["true", "false"]),
+        DeclareLaunchArgument("chassis", default_value="false", choices=["true", "false"]),
+        DeclareLaunchArgument("chassis_dry_run", default_value="true", choices=["true", "false"]),
+        DeclareLaunchArgument("chassis_interface", default_value="eno2"),
+        DeclareLaunchArgument("chassis_sdk_root", default_value=str(chassis_root)),
+        DeclareLaunchArgument("chassis_config", default_value=str(
+            chassis_root / "src/go2control/config/go2control.yaml")),
         DeclareLaunchArgument("pct_startup_timeout_sec", default_value="180"),
         OpaqueFunction(function=_launch),
     ])
