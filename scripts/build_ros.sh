@@ -11,7 +11,7 @@ pct_venv="$global_planner/.venv_pct"
 ros_setup=/opt/ros/humble/setup.bash
 base_paths=("$root/src" "$sensor/src" "$localization/src" "$global_planner/src" "$local_planner/src")
 required_packages=(
-  nav3_navigation_manager
+  nav3_bringup nav3_navigation_manager
   livox_ros_driver2 fast_lio mid360_bringup
   kiss_matcher_localization pcd_cloud_publisher localization_visualizer localization_path_recorder
   pct_planner_interfaces pct_planner pct_planner_viz

@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>nav3_bringup</name>
+  <version>0.1.0</version>
+  <description>Unified launch and startup checks for Nav3</description>
+  <maintainer email="zhoujinghao188@gmail.com">Jinghao</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>ros2launch</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>launch_yaml</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>pct_planner_interfaces</exec_depend>
+  <exec_depend>mid360_bringup</exec_depend>
+  <exec_depend>kiss_matcher_localization</exec_depend>
+  <exec_depend>pct_planner</exec_depend>
+  <exec_depend>scan_planner</exec_depend>
+  <exec_depend>nav3_navigation_manager</exec_depend>
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
