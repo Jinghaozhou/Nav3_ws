@@ -5,6 +5,7 @@ import hashlib
 import math
 import os
 from pathlib import Path
+import sys
 
 import yaml
 from ament_index_python.packages import get_package_prefix, get_package_share_directory
@@ -12,6 +13,7 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     EmitEvent,
+    ExecuteProcess,
     GroupAction,
     IncludeLaunchDescription,
     OpaqueFunction,
@@ -42,16 +44,28 @@ def _launch(context):
         raise RuntimeError(f"统一全局地图不存在或为空：{map_file}")
 
     region = value("initial_region")
+    initialization_source = value("initialization_source")
+    if initialization_source not in ("bbs", "seeds"):
+        raise RuntimeError("initialization_source 只能是 bbs 或 seeds")
     seed_setting = value("region_seed_file")
     mode = value("region_multistart_enabled").lower()
     if mode not in ("auto", "true", "false"):
         raise RuntimeError("region_multistart_enabled 只能是 auto、true 或 false")
     localization_share = Path(get_package_share_directory("kiss_matcher_localization"))
-    seed_file = (localization_share / "config/region_initialization_space.yaml"
-                 if seed_setting == "auto" and region in ("space_2", "2")
-                 else None if seed_setting == "auto" or not seed_setting
-                 else Path(seed_setting).expanduser().resolve())
+    sensor_tools = (Path(get_package_prefix("nav3_bringup")).parent
+                    / "modules/Nav3_Sensor_ws/tools/mid360_lidar")
+    if seed_setting == "auto":
+        if region in ("space_10", "10") and initialization_source == "bbs":
+            seed_file = sensor_tools / "config/region_initialization_bbs_space_10.yaml"
+        elif region in ("space_2", "2"):
+            seed_file = localization_share / "config/region_initialization_space.yaml"
+        else:
+            seed_file = None
+    else:
+        seed_file = Path(seed_setting).expanduser().resolve() if seed_setting else None
     multistart = (seed_file is not None) if mode == "auto" else mode == "true"
+    if initialization_source == "bbs" and not multistart:
+        raise RuntimeError("BBS 初始化需要匹配区域的 region_seed_file 和启用多候选初始化")
     if multistart:
         if seed_file is None or not seed_file.is_file():
             raise RuntimeError("已启用区域候选，但 region_seed_file 不存在")
@@ -104,15 +118,74 @@ def _launch(context):
         "driver": value("driver"), "use_sim_time": common_time,
         "rviz": value("rviz"), "keyframe_candidates": "false",
     })
-    localization = include("kiss_matcher_localization",
-                           "navigation_localization.launch.yaml", {
-        "map_pcd": str(map_file), "region_labels_csv": str(labels_file),
-        "config_path": str(localization_config),
-        "local_map_topic": "/fast_lio/local_map",
-        "initial_region": region,
-        "region_multistart_enabled": str(multistart).lower(),
-        "region_seed_file": str(seed_file) if multistart else "",
-    }, yaml_launch=True)
+    if initialization_source == "bbs":
+        bbs_setting = value("bbs_config")
+        if bbs_setting == "auto":
+            if region in ("space_10", "10"):
+                bbs_config = sensor_tools / "config/bbs_initialization_space_10.json"
+            elif region in ("space_2", "2"):
+                bbs_config = sensor_tools / "config/bbs_initialization.json"
+            else:
+                raise RuntimeError(f"区域 {region!r} 没有默认 BBS 配置；请指定 bbs_config")
+        else:
+            bbs_config = Path(bbs_setting).expanduser().resolve()
+        retriever_script = sensor_tools / "scripts/bbs_retriever.py"
+        sensor_config = sensor_tools / "config/continuous_localization.yaml"
+        for required in (bbs_config, retriever_script, sensor_config):
+            if not required.is_file():
+                raise RuntimeError(f"BBS 初始化文件不存在：{required}")
+        sys.path.insert(0, str(sensor_tools / "scripts"))
+        from bbs_database import BbsDatabase
+        from keyframe_database import validate_sensor_config
+        from prepare_race_map_cache import ensure_cache
+
+        database = BbsDatabase(map_file, bbs_config)
+        try:
+            validate_sensor_config(sensor_tools / "mid360_robot.yaml", database)
+            bbs_parameters = {
+                "map_cache_directory": str(ensure_cache(map_file, labels_file)),
+                "keyframe_library_sha256": database.library_sha,
+                "keyframe_profile_sha256": database.profile_sha,
+                "keyframe_region_id": str(database.region_id),
+                "keyframe_expected_candidates": str(len(database.index)),
+                "hierarchical_min_initial_overlap": str(
+                    database.search_config["minimum_initial_overlap_percent"]),
+            }
+        finally:
+            database.close()
+        retriever = ExecuteProcess(
+            cmd=["/usr/bin/python3", str(retriever_script),
+                 "--config", str(bbs_config), "--map", str(map_file),
+                 "--ros-args", "-p", f"use_sim_time:={common_time}"],
+            output="screen",
+            on_exit=[EmitEvent(event=Shutdown(reason="BBS 检索器退出"))],
+        )
+        localization = include("kiss_matcher_localization",
+                               "navigation_localization.launch.yaml", {
+            "map_pcd": str(map_file), "region_labels_csv": str(labels_file),
+            "config_path": str(sensor_config),
+            "local_map_topic": "/fast_lio/local_map",
+            "local_map_reliability": "reliable",
+            "initial_region": region,
+            "region_multistart_enabled": "true",
+            "region_seed_file": str(seed_file),
+            "candidate_source": "bbs",
+            "keyframe_initialization_enabled": "true",
+            "record_inputs": "false",
+            **bbs_parameters,
+        }, yaml_launch=True)
+        localization_actions = [retriever, localization]
+    else:
+        localization = include("kiss_matcher_localization",
+                               "navigation_localization.launch.yaml", {
+            "map_pcd": str(map_file), "region_labels_csv": str(labels_file),
+            "config_path": str(localization_config),
+            "local_map_topic": "/fast_lio/local_map",
+            "initial_region": region,
+            "region_multistart_enabled": str(multistart).lower(),
+            "region_seed_file": str(seed_file) if multistart else "",
+        }, yaml_launch=True)
+        localization_actions = [localization]
     # The PCT package YAML has a node-specific map setting. A later wildcard
     # parameter file from its standalone launch does not override that setting.
     pct_config = Path(get_package_share_directory("pct_planner")) / "config/pct_planner.yaml"
@@ -172,7 +245,7 @@ def _launch(context):
     actions = [
         SetParameter(name="use_sim_time", value=common_time == "true"),
         GroupAction(scoped=True, actions=[sensor]),
-        GroupAction(scoped=True, actions=[localization]),
+        GroupAction(scoped=True, actions=localization_actions),
         pct,
         GroupAction(scoped=True, actions=[scan]),
     ]
@@ -197,7 +270,9 @@ def generate_launch_description():
     chassis_root = install_prefix.parent / "modules/Nav3_Chassis_ws"
     return LaunchDescription([
         DeclareLaunchArgument("map_pcd", default_value=str(default_map_dir / "building_split_space.pcd")),
-        DeclareLaunchArgument("initial_region", default_value="space_2"),
+        DeclareLaunchArgument("initial_region", default_value="space_10"),
+        DeclareLaunchArgument("initialization_source", default_value="bbs", choices=["bbs", "seeds"]),
+        DeclareLaunchArgument("bbs_config", default_value="auto"),
         DeclareLaunchArgument("region_seed_file", default_value="auto"),
         DeclareLaunchArgument("region_multistart_enabled", default_value="auto"),
         DeclareLaunchArgument("driver", default_value="true", choices=["true", "false"]),

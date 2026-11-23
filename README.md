@@ -104,7 +104,7 @@ MID360 + IMU ──> FAST-LIO ── odom / local_map ──> 定位 ── map�
 | PCT | [`pct_planner.yaml`](modules/Nav3_Global_planner_ws/src/pct_planner/config/pct_planner.yaml)、[`pct_planner.launch.py`](modules/Nav3_Global_planner_ws/src/pct_planner/launch/pct_planner.launch.py) | `map`、`map_dir`、`cache_dir`、`resolution`、`ground_h`、`slice_dh`、机器人净空、坡度、台阶与安全膨胀参数。默认地图仍是 `building2_9.pcd`，集成时须显式覆盖。 |
 | SCAN | [`integration.yaml`](modules/Nav3_Local_Planner_ws/src/scan_planner/config/integration.yaml)、`planner.yaml`、`controller.yaml`、[`scan_planner.launch.py`](modules/Nav3_Local_Planner_ws/src/scan_planner/launch/scan_planner.launch.py) | `odom_topic`、`local_map_topic`、`path_topic`、`cmd_vel_topic`、四个 frame、`velocity_source`、`path_height_mode`、`unknown_space_policy`、`require_localization_permission`。 |
 | 任务管理器 | [`navigation_manager.yaml`](src/nav3_navigation_manager/config/navigation_manager.yaml)、[`navigation_manager.launch.py`](src/nav3_navigation_manager/launch/navigation_manager.launch.py) | 目标 Action、定位许可、SCAN 状态、PCT 服务和受管理路径话题；许可、TF、规划和任务超时阈值。 |
-| 统一启动 | [`nav3.launch.py`](src/nav3_bringup/launch/nav3.launch.py) | `map_pcd`、`initial_region`（默认 `space_2`）、`region_seed_file`、`region_multistart_enabled`、`driver`、`use_sim_time`、`rviz` 和 PCT 预热时限。SCAN 固定使用 `/nav3/managed_path` 和 `/cmd_vel`。 |
+| 统一启动 | [`nav3.launch.py`](src/nav3_bringup/launch/nav3.launch.py) | `map_pcd`、`initial_region`（默认 `space_10`）、`initialization_source`（默认 `bbs`）、`bbs_config`、`region_seed_file`、`region_multistart_enabled`、`driver`、`use_sim_time`、`rviz` 和 PCT 预热时限。SCAN 固定使用 `/nav3/managed_path` 和 `/cmd_vel`。 |
 
 SCAN 的 `unknown_space_policy` 默认为 `occupied`；只有点云占据证据而没有自由空间证据时，保守配置会保持零速度。`free_inside_bounds` 需在确认地图覆盖、可通行性和停车能力后显式选择。回放时所有参与节点应统一设置 `use_sim_time`，并使用相同的 `ROS_DOMAIN_ID`。
 
@@ -139,35 +139,10 @@ source /home/jinghao/Nav3_ws/scripts/source_env.bash
 ros2 launch nav3_bringup nav3.launch.py
 ```
 
-默认使用实体 MID360、统一全局地图和 `space_2` 区域候选；首次启动区域可用 `initial_region:=space_3` 等参数修改。更换区域时默认不沿用 `space_2` 候选，需另传对应的 `region_seed_file` 才启用多候选。底盘桥接默认关闭；`chassis:=true` 先以空跑模式订阅 SCAN 的 `/cmd_vel`，实机连接还需显式传入 `chassis_dry_run:=false`。PCT 地图预热完成后才启动管理器和已启用的底盘桥接；管理器仍需等待首次定位和 SCAN 状态才能接收目标。参数、示例和启动条件见[统一启动包说明](src/nav3_bringup/README.md)。
+默认使用实体 MID360、统一全局地图，以 `space_10` 的 BBS 动态候选进行首次定位；所需 BBS 模型须另行准备，默认不录包。可用 `initial_region:=space_2` 切换到该区域的 BBS 配置，或用 `initialization_source:=seeds` 保留原固定候选方式。底盘桥接默认关闭；`chassis:=true` 先以空跑模式订阅 SCAN 的 `/cmd_vel`，实机连接还需显式传入 `chassis_dry_run:=false`。PCT 地图预热完成后才启动管理器和已启用的底盘桥接；管理器仍需等待首次定位和 SCAN 状态才能接收目标。参数、示例和启动条件见[统一启动包说明](src/nav3_bringup/README.md)。
 
 需要保留联调数据时，先在单独终端运行 `ros2 launch nav3_bag_recorder record.launch.py`，再启动 bringup。默认录制原始雷达/IMU、TF、定位、规划、SCAN 和速度话题，保存在 Git 忽略的 `data/bags/`；档位及回放方法见[录包说明](src/nav3_bag_recorder/README.md)。
 
 ## 仓库与部署说明
 
 `.gitmodules` 已配置为 `Jinghaozhou` 账户下的五个 GitHub 仓库。各仓库推送完成后，可使用 `git clone --recurse-submodules` 获取主仓库及固定版本的子模块。子模块固定的是各原仓库当时已提交的版本；原工作空间中未提交的修改、被忽略的地图及构建结果不会自动进入本仓库。地图和 bag 仍须单独准备。
-
-## 2026-11-23 配套模块同步分支
-
-`wyn/race-auto-library-20261123` 固定以下配套版本，供审查和复现：
-
-| 模块 | 提交 | 更新范围 |
-| --- | --- | --- |
-| Sensor | `83ff7b3c86c22804425597dd54e70032c1fe9fd6` | `tools/mid360_lidar` 独立实验工具：BBS/实采库竞争、一键录包、版本化补库 |
-| Localization | `c34fc31823ad3c136e442b0ec0361665949a2927` | 双路权威应用服务、异步查询等待、精确地图缓存，保留导航许可保护 |
-
-其他三个子模块指针保持原版本。两个模块PR 1已审查并合入各自main，上表固定其合并提交；本主仓库沿用相同代码树的验证结果。标准 `nav3_bringup` 的启动默认不切换；使用独立实验入口时，不得同时启动标准传感器/定位节点。
-
-```bash
-# 在按现有脚本完成依赖和ROS构建、并补齐地图/库/BBS数据后
-bash modules/Nav3_Sensor_ws/tools/mid360_lidar/scripts/start_scan.sh --mode race --region space_2
-```
-
-实验工具默认在录包封口后严格筛选生成下一轮活动库；冻结40帧不改，使用 `--no-auto-library-update` 保持独立实验。仅权威定位节点发布全局TF与 `/localization/navigation_allowed`，私有验证器不发布；成功后先验跟踪，失配重新双路竞争，不恢复KISS粗配准。原始地图与点云库等二进制数据继续单独传输。
-
-验证范围：定位包独立编译、初始化状态机、5项启动/结束生命周期、3项路径解析、隔离域历史点云的双路初始化/先验/失配恢复，以及许可初始拒绝→定位后允许→输入过期撤销。未执行Go2硬件导航或重新标定安装外参。
-
-
-## space_10 experimental initialization update
-
-The `wyn/space10-initialization-20261123` branch pins matching Sensor/Localization changes for region-only BBS and virtual-template initialization on the Go2 low-view scan setup. Use the explicit experimental commands under Sensor's `tools/mid360_lidar`; this does not switch the standard combined launch. Initialization still requires candidate quality, ambiguity and two-window checks, then full-map prior VGICP; no KISS fallback is enabled. Both module PRs must be reviewed before this parent PR is merged. Map/model arrays and recordings are transferred separately, not stored in Git. The two field scans verify specific start poses only, not arbitrary-start accuracy or closed-loop robot navigation.
