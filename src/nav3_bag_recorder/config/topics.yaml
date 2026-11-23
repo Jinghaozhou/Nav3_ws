@@ -1,0 +1,38 @@
+groups:
+  sensor:
+    - /clock
+    - /lidar_points
+    - /imu
+    - /tf
+    - /tf_static
+    - /fast_lio/odom
+    - /fast_lio/gravity
+    - /fast_lio/local_map
+    - /fast_lio/local_map_global
+    - /fast_lio/health
+    - /fast_lio/window_status
+  navigation:
+    - /localization/status
+    - /localization/navigation_allowed
+    - /pct/global_path
+    - /nav3/managed_path
+    - /nav3/navigation_state
+    - /nav3/navigate_to_pose/_action/feedback
+    - /nav3/navigate_to_pose/_action/status
+    - /scan_planner/status
+    - /scan_planner/execution_state
+    - /scan_planner/trajectory
+    - /scan_planner/local_path
+    - /cmd_vel
+    - /go2_cmd_vel_bridge/commanded_velocity
+  diagnostic:
+    - /fast_lio/local_cloud
+    - /localization/selected_cloud
+    - /localization/input_snapshot
+    - /localization/keyframe_candidates
+    - /localization/keyframe_status
+
+profiles:
+  sensor: [sensor]
+  integration: [sensor, navigation]
+  diagnostic: [sensor, navigation, diagnostic]
