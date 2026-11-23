@@ -1,13 +1,16 @@
 """Start the Nav3 navigation modules, manager, and optional Go2 bridge."""
 
 import csv
+from datetime import datetime
 import hashlib
+import logging
 import math
 import os
 from pathlib import Path
 import sys
 
 import yaml
+import launch.logging
 from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
@@ -19,7 +22,7 @@ from launch.actions import (
     OpaqueFunction,
     RegisterEventHandler,
 )
-from launch.event_handlers import OnProcessExit
+from launch.event_handlers import OnProcessExit, OnShutdown
 from launch.events import Shutdown
 from launch.launch_description_sources import (
     AnyLaunchDescriptionSource,
@@ -27,6 +30,33 @@ from launch.launch_description_sources import (
 )
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, SetParameter
+
+
+class _BringupConsoleFilter(logging.Filter):
+    """Show readiness and localization while retaining detailed ROS logs."""
+
+    stopping = False
+
+    def filter(self, record):
+        name = record.name
+        if name.endswith(("-stdout", "-stderr")):
+            return name.startswith((
+                "navigation_localizer-", "bbs_retriever-",
+                "bringup_status.py-",
+            ))
+        return record.levelno >= logging.ERROR and not self.stopping
+
+
+def _configure_console():
+    _BringupConsoleFilter.stopping = False
+    handler = launch.logging.launch_config.get_screen_handler()
+    if not any(isinstance(item, _BringupConsoleFilter) for item in handler.filters):
+        handler.addFilter(_BringupConsoleFilter())
+
+
+def _on_shutdown(_event, _context):
+    _BringupConsoleFilter.stopping = True
+    return []
 
 
 def _digest(path):
@@ -104,6 +134,9 @@ def _launch(context):
     chassis_dry_run = value("chassis_dry_run") == "true"
     if chassis_enabled and not chassis_dry_run and value("use_sim_time") == "true":
         raise RuntimeError("回放仿真时间时不可连接实体底盘；使用 chassis_dry_run:=true")
+    visual_map = Path(value("visualization_map_pcd")).expanduser().resolve()
+    if value("visualization") == "true" and not visual_map.is_file():
+        raise RuntimeError(f"可视化地图不存在：{visual_map}；先运行 nav3_visualization 的降采样脚本")
 
     def include(package, file, arguments, yaml_launch=False):
         source = Path(get_package_share_directory(package)) / "launch" / file
@@ -114,9 +147,16 @@ def _launch(context):
         )
 
     common_time = value("use_sim_time")
+    timing_dir = None
+    if value("timing_diagnostics") == "true":
+        root = Path(get_package_prefix("nav3_bringup")).parent
+        timing_dir = root / "log" / "timing" / (datetime.now().strftime("%Y%m%d_%H%M%S_%f") + f"_{os.getpid()}")
+        timing_dir.mkdir(parents=True, exist_ok=False)
+        print(f"[Nav3] 时间诊断记录：{timing_dir}", flush=True)
     sensor = include("mid360_bringup", "mid360_mapping.launch.py", {
         "driver": value("driver"), "use_sim_time": common_time,
         "rviz": value("rviz"), "keyframe_candidates": "false",
+        "local_map_timing_csv": str(timing_dir / "local_map_publish.csv") if timing_dir else "",
     })
     if initialization_source == "bbs":
         bbs_setting = value("bbs_config")
@@ -157,6 +197,7 @@ def _launch(context):
             cmd=["/usr/bin/python3", str(retriever_script),
                  "--config", str(bbs_config), "--map", str(map_file),
                  "--ros-args", "-p", f"use_sim_time:={common_time}"],
+            name="bbs_retriever",
             output="screen",
             on_exit=[EmitEvent(event=Shutdown(reason="BBS 检索器退出"))],
         )
@@ -172,6 +213,7 @@ def _launch(context):
             "candidate_source": "bbs",
             "keyframe_initialization_enabled": "true",
             "record_inputs": "false",
+            "timing_diagnostics_csv": str(timing_dir / "localization_timing.csv") if timing_dir else "",
             **bbs_parameters,
         }, yaml_launch=True)
         localization_actions = [retriever, localization]
@@ -184,6 +226,7 @@ def _launch(context):
             "initial_region": region,
             "region_multistart_enabled": str(multistart).lower(),
             "region_seed_file": str(seed_file) if multistart else "",
+            "timing_diagnostics_csv": str(timing_dir / "localization_timing.csv") if timing_dir else "",
         }, yaml_launch=True)
         localization_actions = [localization]
     # The PCT package YAML has a node-specific map setting. A later wildcard
@@ -204,6 +247,9 @@ def _launch(context):
         "use_sim_time": common_time,
         "path_topic": "/nav3/managed_path",
         "cmd_vel_topic": "/cmd_vel",
+        "unknown_space_policy": value("scan_unknown_space_policy"),
+        "check_local_collision": value("scan_check_local_collision"),
+        "map_timeout": value("scan_map_timeout"),
         "require_localization_permission": "true",
         "localization_permission_topic": "/localization/navigation_allowed",
     })
@@ -215,6 +261,14 @@ def _launch(context):
     prewarm = Node(
         package="nav3_bringup", executable="prewarm_pct.py",
         output="screen", arguments=["--timeout", value("pct_startup_timeout_sec")],
+    )
+    status = Node(
+        package="nav3_bringup", executable="bringup_status.py",
+        output="screen", arguments=[
+            "--driver", value("driver"),
+            "--initialization-source", initialization_source,
+            "--chassis", value("chassis"),
+        ],
     )
 
     chassis_actions = []
@@ -240,15 +294,22 @@ def _launch(context):
     def after_prewarm(event, _context):
         if event.returncode == 0:
             return [GroupAction(scoped=True, actions=[manager, *chassis_actions])]
+        print("[Nav3] PCT 全局规划：地图准备失败", flush=True)
         return [EmitEvent(event=Shutdown(reason="PCT 地图准备失败"))]
 
     actions = [
         SetParameter(name="use_sim_time", value=common_time == "true"),
+        status,
         GroupAction(scoped=True, actions=[sensor]),
         GroupAction(scoped=True, actions=localization_actions),
         pct,
         GroupAction(scoped=True, actions=[scan]),
     ]
+    if value("visualization") == "true":
+        actions.append(GroupAction(scoped=True, actions=[include(
+            "nav3_visualization", "navigation_visualization.launch.py",
+            {"map_pcd": str(visual_map), "rviz": value("visualization_rviz")},
+        )]))
     if chassis_actions:
         actions.append(RegisterEventHandler(OnProcessExit(
             target_action=chassis_actions[0],
@@ -263,12 +324,14 @@ def _launch(context):
 
 
 def generate_launch_description():
+    _configure_console()
     install_prefix = Path(get_package_prefix("nav3_bringup"))
     # The root build uses --merge-install; source_env.bash exports PCT_MAP_DIR.
     fallback_map_dir = install_prefix.parent / "data/maps"
     default_map_dir = Path(os.environ.get("PCT_MAP_DIR", fallback_map_dir))
     chassis_root = install_prefix.parent / "modules/Nav3_Chassis_ws"
     return LaunchDescription([
+        RegisterEventHandler(OnShutdown(on_shutdown=_on_shutdown)),
         DeclareLaunchArgument("map_pcd", default_value=str(default_map_dir / "building_split_space.pcd")),
         DeclareLaunchArgument("initial_region", default_value="space_10"),
         DeclareLaunchArgument("initialization_source", default_value="bbs", choices=["bbs", "seeds"]),
@@ -277,10 +340,20 @@ def generate_launch_description():
         DeclareLaunchArgument("region_multistart_enabled", default_value="auto"),
         DeclareLaunchArgument("driver", default_value="true", choices=["true", "false"]),
         DeclareLaunchArgument("use_sim_time", default_value="false", choices=["true", "false"]),
+        DeclareLaunchArgument("timing_diagnostics", default_value="false", choices=["true", "false"]),
         DeclareLaunchArgument("rviz", default_value="false", choices=["true", "false"]),
+        DeclareLaunchArgument("visualization", default_value="false", choices=["true", "false"]),
+        DeclareLaunchArgument("visualization_rviz", default_value="true", choices=["true", "false"]),
+        DeclareLaunchArgument("visualization_map_pcd", default_value=str(
+            default_map_dir / "building_split_space_viz_space10_open.pcd")),
         DeclareLaunchArgument("chassis", default_value="false", choices=["true", "false"]),
         DeclareLaunchArgument("chassis_dry_run", default_value="true", choices=["true", "false"]),
         DeclareLaunchArgument("chassis_interface", default_value="eno2"),
+        DeclareLaunchArgument("scan_unknown_space_policy", default_value="free_inside_bounds",
+                              choices=["occupied", "free_inside_bounds"]),
+        DeclareLaunchArgument("scan_check_local_collision", default_value="true",
+                              choices=["true", "false"]),
+        DeclareLaunchArgument("scan_map_timeout", default_value="1.5"),
         DeclareLaunchArgument("chassis_sdk_root", default_value=str(chassis_root)),
         DeclareLaunchArgument("chassis_config", default_value=str(
             chassis_root / "src/go2control/config/go2control.yaml")),

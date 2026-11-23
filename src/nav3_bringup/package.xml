@@ -19,6 +19,7 @@
   <exec_depend>pct_planner</exec_depend>
   <exec_depend>scan_planner</exec_depend>
   <exec_depend>nav3_navigation_manager</exec_depend>
+  <exec_depend>nav3_visualization</exec_depend>
   <exec_depend>go2control</exec_depend>
   <export>
     <build_type>ament_cmake</build_type>

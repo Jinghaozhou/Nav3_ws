@@ -2,7 +2,7 @@
 
 Nav3 将传感器里程计、全局定位、三维全局规划和局部规划组织为四个独立的 ROS 2 Humble 工作空间，另以独立工作空间保存 Go2 底盘控制模块。模块间通过 ROS 2 Topic、Service 和 TF 交换数据，不直接调用彼此的算法源码。本仓库用 Git 子模块固定各模块版本，并保存集成时使用的数据目录。
 
-**当前状态：**四个导航模块和 Go2 底盘工作空间已纳入子模块；主仓库已有独立的 `nav3_navigation_manager` 任务管理包、`nav3_bringup` 联合启动包和 `nav3_bag_recorder` 录包包。`scripts/prepare_non_ros.sh` 准备导航模块原生依赖，`scripts/build_ros.sh` 统一构建五个子模块和主仓库的 ROS 包。bringup 支持按参数启动 Go2 速度桥接，实机闭环仍需联调验证。
+**当前状态：**四个导航模块和 Go2 底盘工作空间已纳入子模块；主仓库已有独立的 `nav3_navigation_manager` 任务管理包、`nav3_bringup` 联合启动包、`nav3_visualization` 可视化包和 `nav3_bag_recorder` 录包包。`scripts/prepare_non_ros.sh` 准备导航模块原生依赖，`scripts/build_ros.sh` 统一构建五个子模块和主仓库的 ROS 包。bringup 支持按参数启动 Go2 速度桥接，实机闭环仍需联调验证。
 
 联调现状见[联调记录](report/联调记录.md)和[问题排查与解决建议](report/三维导航系统联调问题排查与解决建议.md)。面向汇报的概览见[主仓库架构与联调进度说明](report/Nav3主仓库架构与联调进度说明.md)，团队交接方式见[模块协作与主仓库联调流程](report/Nav3模块协作与主仓库联调流程.md)。
 
@@ -18,6 +18,7 @@ Nav3_ws/
 │   └── Nav3_Chassis_ws/         # Go2 速度桥接与底盘控制
 ├── src/nav3_bringup/            # 导航模块、任务管理器与可选底盘桥接的联合启动
 ├── src/nav3_navigation_manager/ # 导航目标 Action、任务状态和受管理路径
+├── src/nav3_visualization/      # 降采样地图生成及 RViz 导航可视化
 ├── src/nav3_bag_recorder/       # 分档录制传感器与导航联调话题
 ├── data/maps/                   # 本机全局地图，不纳入 Git
 ├── data/bags/                   # 本机回放数据，不纳入 Git
@@ -36,6 +37,7 @@ Nav3_ws/
 | 局部规划与控制 | `scan_planner`、`scan_planner_msgs`、`scan_planner_demo` | 消费里程计、局部地图、TF 和全局路径，输出局部轨迹、状态与平面速度。 |
 | 导航任务管理 | `nav3_navigation_manager` | 接收 `map` 中的三维目标，调用 PCT，发布受管理路径，依据 SCAN 状态完成、取消或中止任务。 |
 | 统一启动 | `nav3_bringup` | 连接四个导航模块的启动参数，检查统一地图与区域候选，预热 PCT 后启动任务管理器与可选的底盘桥接。 |
+| 导航可视化 | `nav3_visualization` | 显示独立生成的轻量全局地图、局部地图窗口、全局路径与 SCAN 局部轨迹；不参与规划。 |
 | 联调录包 | `nav3_bag_recorder` | 按传感器、整机或诊断档位录制原始输入、TF、定位/规划状态及速度输出。 |
 | 底盘控制 | `go2control` | 订阅 `/cmd_vel` 并转为 Go2 的运动指令；统一启动默认关闭，可先空跑检查。 |
 
@@ -131,7 +133,7 @@ scripts/build_ros.sh --jobs 4
 source /home/jinghao/Nav3_ws/scripts/source_env.bash
 ```
 
-脚本限定主仓库及五个子模块的 `src/` 为包发现目录，把 17 个 ROS 包安装到主目录的 `install/`，不会加载子模块的旧 `install/`。具体用法、默认构建范围和验收命令见[脚本说明](scripts/README.md)。
+脚本限定主仓库及五个子模块的 `src/` 为包发现目录，把 18 个 ROS 包安装到主目录的 `install/`，不会加载子模块的旧 `install/`。具体用法、默认构建范围和验收命令见[脚本说明](scripts/README.md)。
 
 联合启动入口：
 

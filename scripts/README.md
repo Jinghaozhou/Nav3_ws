@@ -50,7 +50,7 @@ scripts/build_ros.sh --check
 scripts/build_ros.sh --jobs 4
 ```
 
-`--check` 只读检查非 ROS 依赖和 ROS 包发现情况；默认构建从主仓库 `src/` 和五个子模块的 `src/` 中发现的全部 ROS 包，包括 `nav3_bringup`、`nav3_navigation_manager`、`nav3_bag_recorder`、`scan_planner_demo` 与 `go2control`，不会扫描 `legacy/`、`vendor/` 或 PCT 原生库源码。脚本从 ROS 2 Humble 和 PCT 虚拟环境构建，使用定位子模块的 `external/` 查找算法库。`--jobs` 控制单包编译并行数；为了限制内存峰值，`colcon` 一次构建一个包。构建期测试默认关闭，测试与 Gazebo 演示运行需另行执行。
+`--check` 只读检查非 ROS 依赖和 ROS 包发现情况；默认构建从主仓库 `src/` 和五个子模块的 `src/` 中发现的全部 ROS 包，包括 `nav3_bringup`、`nav3_navigation_manager`、`nav3_visualization`、`nav3_bag_recorder`、`scan_planner_demo` 与 `go2control`，不会扫描 `legacy/`、`vendor/` 或 PCT 原生库源码。脚本从 ROS 2 Humble 和 PCT 虚拟环境构建，使用定位子模块的 `external/` 查找算法库。`--jobs` 控制单包编译并行数；为了限制内存峰值，`colcon` 一次构建一个包。构建期测试默认关闭，测试与 Gazebo 演示运行需另行执行。
 
 全部 ROS 包统一安装到主目录的 `install/`，构建过程写入主目录的 `build/`、`log/`；不会使用子模块已有的 `install/`。构建脚本结束前还会检查每个发现的包均指向主目录 `install/`。构建成功后，在**新终端**加载环境：
 

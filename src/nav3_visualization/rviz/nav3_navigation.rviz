@@ -1,0 +1,104 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Enabled: true
+      Name: Grid
+      Value: true
+    - Class: rviz_default_plugins/PointCloud2
+      Enabled: true
+      Name: Downsampled Global Map
+      Alpha: 0.45
+      Decay Time: 0
+      Style: Flat Squares
+      Size (Pixels): 2
+      Color Transformer: RGB8
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /nav3/viz/global_map
+      Value: true
+    - Class: rviz_default_plugins/PointCloud2
+      Enabled: true
+      Name: Local Map Window
+      Alpha: 0.75
+      Decay Time: 0
+      Style: Flat Squares
+      Size (Pixels): 2
+      Color Transformer: FlatColor
+      Color: 255; 180; 40
+      Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /fast_lio/local_map
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Enabled: true
+      Name: Managed Global Path
+      Color: 0; 230; 255
+      Line Style: Lines
+      Line Width: 0.08
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /nav3/managed_path
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Enabled: true
+      Name: SCAN Local Path
+      Color: 255; 100; 0
+      Line Style: Lines
+      Line Width: 0.10
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /scan_planner/local_path
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Enabled: false
+      Name: PCT Raw Global Path
+      Color: 140; 140; 140
+      Line Style: Lines
+      Line Width: 0.03
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /pct/global_path
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 38; 38; 38
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 30
+      Focal Point:
+        X: -0.4
+        Y: 34.9
+        Z: 6.0
+      Target Frame: <Fixed Frame>
+      Value: Orbit (rviz)
+    Saved: ~

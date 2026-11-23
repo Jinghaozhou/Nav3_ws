@@ -11,6 +11,24 @@ source /home/jinghao/Nav3_ws/scripts/source_env.bash
 ros2 launch nav3_bringup nav3.launch.py
 ```
 
+需要同时打开统一导航可视化时，先按 [nav3_visualization 说明](../nav3_visualization/README.md)生成小地图，再启动 `ros2 launch nav3_bringup nav3.launch.py visualization:=true`。可视化显示去除 space_10 天花板的降采样地图、局部地图窗口、受管理全局路径和 SCAN 局部轨迹；默认不启动。原 `rviz` 参数仅控制传感器模块自带的 RViz。
+
+终端默认只显示各模块的节点加载状态、定位节点与 BBS 检索器的输出，以及启动失败信息。`节点已加载` 表示预期 ROS 节点已出现；定位是否真正成功以终端中的定位输出和 `导航许可已开启` 为准。其他节点的详细日志可在启动时打印的 ROS 日志目录中查看。
+
+排查定位许可短暂撤销时，启动前增加 `timing_diagnostics:=true`。终端会打印本次诊断目录，默认位于主工作空间被 Git 忽略的 `log/timing/时间_进程号/`。`local_map_publish.csv` 记录局部地图发布或跳过的时刻、地图消息时间戳及原因；`localization_timing.csv` 记录定位节点实际接收地图的时刻，并以 5 Hz 记录许可检查时的最近地图接收时刻、地图时间戳和 `odom → base_link` TF 时间戳。CSV 的 `ros_ns` 使用 ROS 时钟，`steady_ns` 使用本机单调时钟，单位均为纳秒；缺失的时间戳填 `-1`。发布和接收记录可按 `map_stamp_ns` 对齐，同一时间戳重复发布时按顺序取最近的一条。诊断关闭时不创建文件，也不额外查询许可检查中的 TF。
+
+```bash
+ros2 launch nav3_bringup nav3.launch.py timing_diagnostics:=true
+```
+
+局部地图的 `header.stamp` 来自最新输入点云，不是发布时刻。若许可日志出现 `map_fresh=false`，比较两份 CSV 中的发布、接收和消息时间戳，便可区分发布暂停、接收延迟和输入时间戳过旧。诊断模式只增加日志，不改变许可阈值或导航控制。
+
+联合启动给 SCAN 传入 `scan_unknown_space_policy:=free_inside_bounds`：在局部地图快照边界内，未被点云标为占据的位置按自由空间处理；已观测的障碍和地图边界仍会阻止规划。需要恢复保守策略时传入 `scan_unknown_space_policy:=occupied`。该设置针对点云没有自由空间射线证据的现状，实机使用前应确认局部地图覆盖和全局路径可通行。
+
+仅在已确认前方通畅的实机实验中，可显式传入 `scan_check_local_collision:=false`，让 SCAN 不使用局部点云做障碍碰撞判定；局部地图输入、地图窗口边界、参考路径走廊、动态可行性、定位许可、轨迹有效期及底盘限速仍生效。默认值为 `true`，实验后重新启动即恢复碰撞检查。
+
+局部地图以约 1 Hz 发布。联调时若 SCAN 因发布抖动报告局部地图超时，可临时传入 `scan_map_timeout:=3.0`；默认仍为 1.5 秒。
+
 默认启动实体 MID360，地图为主工作空间 `data/maps/building_split_space.pcd`，首次区域为 `space_10`，使用 BBS 动态候选做初定位，RViz 不启动。bringup 复用传感器模块的 BBS 检索脚本与定位配置：先校验统一地图、`space_10` 区域配置和 Git 忽略目录中的 BBS 模型，再启动检索器与权威定位节点；两个窗口确认成功后才应用 `map → odom`。默认不录 rosbag，底盘也不启动。BBS 模型需要按传感器模块说明在本机单独准备。雷达网口仍须按传感器模块的说明事先配置。只检查无雷达场景的启动结构时，可以使用 `driver:=false`；此时不会有真实局部地图和里程计，导航管理器应保持等待状态。回放时还要设 `use_sim_time:=true` 并提供 `/clock`、雷达和 IMU 数据。
 
 底盘默认不启动。先用空跑模式检查统一启动的 `/cmd_vel` 订阅，不连接机器人 SDK：
@@ -49,10 +67,17 @@ ros2 launch nav3_bringup nav3.launch.py initialization_source:=seeds initial_reg
 | `region_multistart_enabled` | `auto` | 自动根据候选文件启用；也可强制开启或关闭。 |
 | `driver` | `true` | 是否启动实体 MID360 驱动。 |
 | `use_sim_time` | `false` | 统一传给各节点的仿真时间参数。 |
+| `timing_diagnostics` | `false` | 记录局部地图发布、定位接收及导航许可检查的时间诊断 CSV。 |
 | `rviz` | `false` | 是否启动传感器 RViz。 |
+| `visualization` | `false` | 是否启动主仓库导航可视化包和 RViz。 |
+| `visualization_rviz` | `true` | 开启可视化时是否同时打开 RViz 窗口；设为 `false` 只发布显示地图。 |
+| `visualization_map_pcd` | `data/maps/building_split_space_viz_space10_open.pcd` | RViz 专用降采样地图。 |
 | `chassis` | `false` | 是否在 PCT 预热后启动 Go2 速度桥接。 |
 | `chassis_dry_run` | `true` | 空跑时只处理 ROS 消息；设为 `false` 才连接实机。 |
 | `chassis_interface` | `eno2` | 实机桥接使用的有线网卡。 |
+| `scan_unknown_space_policy` | `free_inside_bounds` | SCAN 在局部地图边界内把未观测空间视为自由；`occupied` 将其视为占据。 |
+| `scan_check_local_collision` | `true` | SCAN 局部点云碰撞检查；`false` 仅用于已确认通畅的实机联调。 |
+| `scan_map_timeout` | `1.5` | SCAN 局部地图输入超时秒数。 |
 | `chassis_sdk_root` | 主工作空间 `modules/Nav3_Chassis_ws` | 含 `vendor/` 的 SDK 工作空间根目录。 |
 | `chassis_config` | 底盘子模块 `config/go2control.yaml` | 速度限幅、超时等桥接参数。 |
 | `pct_startup_timeout_sec` | `180` | 等待 PCT 服务及地图预热的总时限。 |
