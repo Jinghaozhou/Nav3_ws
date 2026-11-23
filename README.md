@@ -162,3 +162,8 @@ bash modules/Nav3_Sensor_ws/tools/mid360_lidar/scripts/start_scan.sh --mode race
 实验工具默认在录包封口后严格筛选生成下一轮活动库；冻结40帧不改，使用 `--no-auto-library-update` 保持独立实验。仅权威定位节点发布全局TF与 `/localization/navigation_allowed`，私有验证器不发布；成功后先验跟踪，失配重新双路竞争，不恢复KISS粗配准。原始地图与点云库等二进制数据继续单独传输。
 
 验证范围：定位包独立编译、初始化状态机、5项启动/结束生命周期、3项路径解析、隔离域历史点云的双路初始化/先验/失配恢复，以及许可初始拒绝→定位后允许→输入过期撤销。未执行Go2硬件导航或重新标定安装外参。
+
+
+## space_10 experimental initialization update
+
+The `wyn/space10-initialization-20261123` branch pins matching Sensor/Localization changes for region-only BBS and virtual-template initialization on the Go2 low-view scan setup. Use the explicit experimental commands under Sensor's `tools/mid360_lidar`; this does not switch the standard combined launch. Initialization still requires candidate quality, ambiguity and two-window checks, then full-map prior VGICP; no KISS fallback is enabled. Both module PRs must be reviewed before this parent PR is merged. Map/model arrays and recordings are transferred separately, not stored in Git. The two field scans verify specific start poses only, not arbitrary-start accuracy or closed-loop robot navigation.
