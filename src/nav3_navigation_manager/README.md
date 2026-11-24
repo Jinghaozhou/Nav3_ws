@@ -12,6 +12,7 @@
 | `/scan_planner/execution_state` | `scan_planner_msgs/msg/ExecutionState` | 控制器心跳和实际轨迹跟踪状态；超时或持续未跟踪当前任务时撤销路径。 |
 | `/pct/plan` | `pct_planner_interfaces/srv/Plan` | 用当前 `map → base_link` 位姿和用户目标请求三维路径。 |
 | `/nav3/managed_path` | `nav_msgs/msg/Path` | 管理器独占的任务路径，Reliable + Transient Local；启动、取消、失败或到达时发布空路径。 |
+| `/nav3/navigation_endpoints` | `geometry_msgs/msg/PoseArray` | 最近一次导航请求的起点和目标，`poses[0]` 为实际提交给 PCT 的起点，`poses[1]` 为目标；即使规划失败也保留，供 RViz 诊断。 |
 | `/nav3/navigation_state` | `std_msgs/msg/String` | `READY`、等待原因或活动阶段；Reliable + Transient Local。 |
 
 目标必须为 `header.frame_id=map` 且 XYZ 有限。第一版仅使用目标位置，不执行最终朝向调整，也不从 RViz 二维点击推断高度。只允许一个活动任务；新目标在旧任务结束前被拒绝。PCT 服务可以在首次请求时初始化完整地图，因此 `PLANNING` 阶段可能较长。超时阈值见 `config/navigation_manager.yaml`。

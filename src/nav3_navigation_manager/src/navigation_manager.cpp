@@ -10,6 +10,7 @@
 #include <utility>
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/pose_array.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <pct_planner_interfaces/srv/plan.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -56,6 +57,8 @@ class NavigationManager : public rclcpp::Node {
         "scan_execution_topic", "/scan_planner/execution_state");
     const auto service_name = declare_parameter<std::string>("pct_plan_service", "/pct/plan");
     const auto path_topic = declare_parameter<std::string>("managed_path_topic", "/nav3/managed_path");
+    const auto endpoints_topic = declare_parameter<std::string>(
+        "navigation_endpoints_topic", "/nav3/navigation_endpoints");
     const auto state_topic = declare_parameter<std::string>("state_topic", "/nav3/navigation_state");
     bypass_checks_ = declare_parameter<bool>("bypass_checks", false);
     bypass_max_task_duration_ = positive("bypass_max_task_duration_sec", 45.0);
@@ -76,7 +79,7 @@ class NavigationManager : public rclcpp::Node {
     max_start_motion_ = positive("max_start_motion_m", 0.5);
     if (map_frame_.empty() || base_frame_.empty() || map_frame_ == base_frame_ ||
         action_name_.empty() || permission_topic.empty() || status_topic.empty() || execution_topic.empty() ||
-        service_name.empty() || path_topic.empty() || state_topic.empty()) {
+        service_name.empty() || path_topic.empty() || endpoints_topic.empty() || state_topic.empty()) {
       throw std::invalid_argument("navigation manager requires nonempty, distinct frames and interface names");
     }
 
@@ -85,6 +88,8 @@ class NavigationManager : public rclcpp::Node {
     pct_client_ = create_client<Plan>(service_name);
     managed_path_pub_ = create_publisher<nav_msgs::msg::Path>(
         path_topic, rclcpp::QoS(1).reliable().transient_local());
+    endpoints_pub_ = create_publisher<geometry_msgs::msg::PoseArray>(
+        endpoints_topic, rclcpp::QoS(1).reliable().transient_local());
     state_pub_ = create_publisher<std_msgs::msg::String>(
         state_topic, rclcpp::QoS(1).reliable().transient_local());
     permission_sub_ = create_subscription<std_msgs::msg::Bool>(
@@ -211,6 +216,7 @@ class NavigationManager : public rclcpp::Node {
       }
       requested_start_ = request->start;
       request->goal = target_;
+      publishEndpoints(requested_start_, target_);
       pct_client_->async_send_request(request,
           [this, goal_handle](rclcpp::Client<Plan>::SharedFuture future) {
             if (active_ != goal_handle || phase_ != Phase::Planning || cancel_requested_) return;
@@ -314,6 +320,18 @@ class NavigationManager : public rclcpp::Node {
     managed_path_pub_->publish(empty);
   }
 
+  void publishEndpoints(
+      const geometry_msgs::msg::PoseStamped &start,
+      const geometry_msgs::msg::PoseStamped &goal) {
+    geometry_msgs::msg::PoseArray endpoints;
+    endpoints.header.frame_id = map_frame_;
+    endpoints.header.stamp = now();
+    endpoints.poses.reserve(2);
+    endpoints.poses.push_back(start.pose);
+    endpoints.poses.push_back(goal.pose);
+    endpoints_pub_->publish(endpoints);
+  }
+
   void finishTask(bool success, const std::string &message, bool canceled = false) {
     if (!active_) return;
     publishEmptyPath();
@@ -414,6 +432,7 @@ class NavigationManager : public rclcpp::Node {
   rclcpp::Client<Plan>::SharedPtr pct_client_;
   rclcpp_action::Server<Action>::SharedPtr action_server_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr managed_path_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr endpoints_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr state_pub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr permission_sub_;
   rclcpp::Subscription<Status>::SharedPtr status_sub_;

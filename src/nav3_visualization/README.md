@@ -1,6 +1,6 @@
 # Nav3 导航可视化
 
-`nav3_visualization` 在 RViz2 中同时显示降采样全局地图、局部地图窗口、实际交给 SCAN 的全局路径和 SCAN 局部轨迹。它只负责显示，不向导航管理器发送目标，也不修改定位或规划使用的完整地图。
+`nav3_visualization` 在 RViz2 中同时显示降采样全局地图、局部地图窗口、导航起点与目标、实际交给 SCAN 的全局路径和 SCAN 局部轨迹。它只负责显示，不向导航管理器发送目标，也不修改定位或规划使用的完整地图。
 
 ## 准备可视化地图
 
@@ -35,6 +35,7 @@ ros2 launch nav3_bringup nav3.launch.py visualization:=true
 | --- | --- | --- | --- |
 | 降采样全局地图 | `/nav3/viz/global_map` | `map` | 本包读取小 PCD 后发布一次，Reliable + Transient Local。 |
 | 局部地图窗口 | `/fast_lio/local_map` | `odom` | 直接订阅传感器模块发布的完整窗口快照。 |
+| 导航起点与目标 | `/nav3/viz/navigation_endpoints` | `map` | 绿色球和“起点”文字表示管理器实际提交给 PCT 的起点；红色球和“目标”文字表示导航目标。PCT 失败后仍保留最近一次标记。 |
 | 执行中的全局路径 | `/nav3/managed_path` | `map` | 管理器取消或结束任务时清空。 |
 | SCAN 局部轨迹 | `/scan_planner/local_path` | `odom` | 局部轨迹失效时清空。 |
 | PCT 原始全局路径 | `/pct/global_path` | `map` | 默认隐藏，可在 RViz 打开；其旧路径不代表当前任务仍有效。 |

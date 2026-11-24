@@ -8,6 +8,7 @@ nav3_navigation_manager:
     scan_execution_topic: /scan_planner/execution_state
     pct_plan_service: /pct/plan
     managed_path_topic: /nav3/managed_path
+    navigation_endpoints_topic: /nav3/navigation_endpoints
     state_topic: /nav3/navigation_state
     bypass_max_task_duration_sec: 45.0
     permission_timeout_sec: 1.0

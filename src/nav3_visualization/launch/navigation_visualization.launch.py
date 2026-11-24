@@ -20,6 +20,8 @@ def generate_launch_description():
         Node(package="nav3_visualization", executable="map_publisher.py",
              name="nav3_visual_map_publisher", output="screen",
              parameters=[{"map_pcd": LaunchConfiguration("map_pcd")}]),
+        Node(package="nav3_visualization", executable="endpoint_markers.py",
+             name="nav3_endpoint_markers", output="screen"),
         Node(package="rviz2", executable="rviz2", name="nav3_navigation_rviz",
              arguments=["-d", str(rviz_file)], output="screen",
              condition=IfCondition(LaunchConfiguration("rviz"))),

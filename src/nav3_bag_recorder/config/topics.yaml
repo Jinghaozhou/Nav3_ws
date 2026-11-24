@@ -16,6 +16,7 @@ groups:
     - /localization/navigation_allowed
     - /pct/global_path
     - /nav3/managed_path
+    - /nav3/navigation_endpoints
     - /nav3/navigation_state
     - /nav3/navigate_to_pose/_action/feedback
     - /nav3/navigate_to_pose/_action/status

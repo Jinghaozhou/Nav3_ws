@@ -14,7 +14,7 @@
 
 原始 MID360 点云必须录 `/lidar_points` 的 `livox_ros_driver2/msg/CustomMsg`，不能只录 FAST-LIO 产生的普通 `PointCloud2`。`/fast_lio/local_map` 和 `/fast_lio/local_map_global` 都保留，因为定位分别使用当前窗口和长窗口。`/tf_static` 用于还原雷达安装外参；`/tf` 用于还原 `map → odom → base_link`。默认不录 `/Laser_map` 和 `/pct/tomogram_layers` 这类可重新生成的大型全局数据。
 
-Action 的目标请求和 `/pct/plan` 服务调用不是普通 Topic，本包只录 Action 反馈/状态及已经发布的路径。需要完整复现操作者发送的目标时，另行记录目标坐标和发送时刻。`/localization/input_snapshot` 仅在定位模块开启 `publish_attempt_inputs` 后才会发布；未启用或尚未启动的话题不会阻止录包。
+Action 的目标请求和 `/pct/plan` 服务调用不是普通 Topic。本包通过 `/nav3/navigation_endpoints` 记录管理器实际提交给 PCT 的起点和目标，同时记录 Action 反馈/状态及已经发布的路径；其中 `poses[0]` 是起点，`poses[1]` 是目标。`/localization/input_snapshot` 仅在定位模块开启 `publish_attempt_inputs` 后才会发布；未启用或尚未启动的话题不会阻止录包。
 
 ## 使用
 
