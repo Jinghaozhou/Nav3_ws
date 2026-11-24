@@ -2,6 +2,8 @@
 
 `nav3_bringup` 统一启动传感器、定位、PCT、SCAN 和独立的导航任务管理器，也可以启动 `go2control` 底盘速度桥接。它不处理导航目标，也不接管各模块的算法参数。SCAN 发布 `/cmd_vel`，启用底盘后由桥接订阅该话题。
 
+后续 space_10 导航联调的固定目标为 `map` 坐标 `(-4.0, 30.0, 5.542)`；请求文件与手动发送方法见[导航任务管理器说明](../nav3_navigation_manager/README.md#space_10-固定测试目标)。联合启动不会自动发送该目标。
+
 ## 使用
 
 先在主工作空间完成 `scripts/prepare_non_ros.sh` 和 `scripts/build_ros.sh`，然后在新终端执行：
@@ -22,6 +24,16 @@ ros2 launch nav3_bringup nav3.launch.py timing_diagnostics:=true
 ```
 
 局部地图的 `header.stamp` 来自最新输入点云，不是发布时刻。若许可日志出现 `map_fresh=false`，比较两份 CSV 中的发布、接收和消息时间戳，便可区分发布暂停、接收延迟和输入时间戳过旧。诊断模式只增加日志，不改变许可阈值或导航控制。
+
+定位许可默认在首次成功应用全局定位后持续通过，由 `localization_permission_after_initialization:=true` 控制；未完成首次定位或定位状态被重置时仍为 false。需要恢复按匹配、局部地图和里程计新鲜度持续撤销许可的严格模式时，传入 `localization_permission_after_initialization:=false`。两种模式都不改变导航管理器对当前 `map → base_link` TF 的 0.75 秒检查，也不改变 SCAN 的局部输入超时和底盘速度超时。时间诊断 CSV 仍记录各项新鲜度，并新增 `allowed` 列表示实际发布的许可。
+
+若只为联调管理器的拒绝/故障路径，可显式传入 `manager_bypass_checks:=true`；默认是 `false`。此模式跳过管理器的就绪、新鲜度、路径距离一致性与执行故障判断，并以 45 秒任务上限撤销路径。它不改变 SCAN 与底盘的独立保护，具体保留项见[管理器说明](../nav3_navigation_manager/README.md#显式联调放行模式)。
+
+仅当需要复现 PCT 起点高度问题时，可额外传入 `manager_start_z_override_enabled:=true manager_start_z_override_m:=5.542`；这只覆盖发给 PCT 的起点 z，默认关闭，不修改 TF 或固定目标高度。
+
+```bash
+ros2 launch nav3_bringup nav3.launch.py manager_bypass_checks:=true
+```
 
 联合启动给 SCAN 传入 `scan_unknown_space_policy:=free_inside_bounds`：在局部地图快照边界内，未被点云标为占据的位置按自由空间处理；已观测的障碍和地图边界仍会阻止规划。需要恢复保守策略时传入 `scan_unknown_space_policy:=occupied`。该设置针对点云没有自由空间射线证据的现状，实机使用前应确认局部地图覆盖和全局路径可通行。
 
@@ -68,6 +80,10 @@ ros2 launch nav3_bringup nav3.launch.py initialization_source:=seeds initial_reg
 | `driver` | `true` | 是否启动实体 MID360 驱动。 |
 | `use_sim_time` | `false` | 统一传给各节点的仿真时间参数。 |
 | `timing_diagnostics` | `false` | 记录局部地图发布、定位接收及导航许可检查的时间诊断 CSV。 |
+| `localization_permission_after_initialization` | `true` | 首次定位成功后持续许可；`false` 恢复严格的新鲜度检查。 |
+| `manager_bypass_checks` | `false` | 显式跳过管理器的就绪、路径一致性与执行故障判断；仅用于联调。 |
+| `manager_start_z_override_enabled` | `false` | 是否覆盖发送给 PCT 的规划起点高度。 |
+| `manager_start_z_override_m` | `0.0` | 起点高度覆盖值，只有上项为 `true` 时生效。 |
 | `rviz` | `false` | 是否启动传感器 RViz。 |
 | `visualization` | `false` | 是否启动主仓库导航可视化包和 RViz。 |
 | `visualization_rviz` | `true` | 开启可视化时是否同时打开 RViz 窗口；设为 `false` 只发布显示地图。 |

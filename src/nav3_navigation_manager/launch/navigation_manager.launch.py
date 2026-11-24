@@ -15,6 +15,9 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('config_file', default_value=default_config),
         DeclareLaunchArgument('use_sim_time', default_value='false'),
+        DeclareLaunchArgument('bypass_checks', default_value='false', choices=['true', 'false']),
+        DeclareLaunchArgument('start_z_override_enabled', default_value='false', choices=['true', 'false']),
+        DeclareLaunchArgument('start_z_override_m', default_value='0.0'),
         Node(
             package='nav3_navigation_manager',
             executable='navigation_manager',
@@ -23,6 +26,12 @@ def generate_launch_description():
             parameters=[LaunchConfiguration('config_file'), {
                 'use_sim_time': ParameterValue(
                     LaunchConfiguration('use_sim_time'), value_type=bool),
+                'bypass_checks': ParameterValue(
+                    LaunchConfiguration('bypass_checks'), value_type=bool),
+                'start_z_override_enabled': ParameterValue(
+                    LaunchConfiguration('start_z_override_enabled'), value_type=bool),
+                'start_z_override_m': ParameterValue(
+                    LaunchConfiguration('start_z_override_m'), value_type=float),
             }],
         ),
     ])

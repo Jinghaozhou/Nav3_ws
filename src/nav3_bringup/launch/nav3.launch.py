@@ -214,6 +214,7 @@ def _launch(context):
             "keyframe_initialization_enabled": "true",
             "record_inputs": "false",
             "timing_diagnostics_csv": str(timing_dir / "localization_timing.csv") if timing_dir else "",
+            "navigation_permission_allow_after_initialization": value("localization_permission_after_initialization"),
             **bbs_parameters,
         }, yaml_launch=True)
         localization_actions = [retriever, localization]
@@ -227,6 +228,7 @@ def _launch(context):
             "region_multistart_enabled": str(multistart).lower(),
             "region_seed_file": str(seed_file) if multistart else "",
             "timing_diagnostics_csv": str(timing_dir / "localization_timing.csv") if timing_dir else "",
+            "navigation_permission_allow_after_initialization": value("localization_permission_after_initialization"),
         }, yaml_launch=True)
         localization_actions = [localization]
     # The PCT package YAML has a node-specific map setting. A later wildcard
@@ -255,6 +257,9 @@ def _launch(context):
     })
     manager = include("nav3_navigation_manager", "navigation_manager.launch.py", {
         "use_sim_time": common_time,
+        "bypass_checks": value("manager_bypass_checks"),
+        "start_z_override_enabled": value("manager_start_z_override_enabled"),
+        "start_z_override_m": value("manager_start_z_override_m"),
         "config_file": str(Path(get_package_share_directory("nav3_navigation_manager"))
                            / "config/navigation_manager.yaml"),
     })
@@ -341,6 +346,13 @@ def generate_launch_description():
         DeclareLaunchArgument("driver", default_value="true", choices=["true", "false"]),
         DeclareLaunchArgument("use_sim_time", default_value="false", choices=["true", "false"]),
         DeclareLaunchArgument("timing_diagnostics", default_value="false", choices=["true", "false"]),
+        DeclareLaunchArgument("localization_permission_after_initialization", default_value="true",
+                              choices=["true", "false"]),
+        DeclareLaunchArgument("manager_bypass_checks", default_value="false",
+                              choices=["true", "false"]),
+        DeclareLaunchArgument("manager_start_z_override_enabled", default_value="false",
+                              choices=["true", "false"]),
+        DeclareLaunchArgument("manager_start_z_override_m", default_value="0.0"),
         DeclareLaunchArgument("rviz", default_value="false", choices=["true", "false"]),
         DeclareLaunchArgument("visualization", default_value="false", choices=["true", "false"]),
         DeclareLaunchArgument("visualization_rviz", default_value="true", choices=["true", "false"]),

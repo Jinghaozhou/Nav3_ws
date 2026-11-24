@@ -1,0 +1,11 @@
+# 后续 space_10 实机导航测试的固定 map 坐标目标；不会自动发送。
+target:
+  header:
+    frame_id: map
+  pose:
+    position:
+      x: -4.0
+      y: 30.0
+      z: 5.542
+    orientation:
+      w: 1.0

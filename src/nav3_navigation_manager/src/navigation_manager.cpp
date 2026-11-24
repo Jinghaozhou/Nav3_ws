@@ -57,6 +57,13 @@ class NavigationManager : public rclcpp::Node {
     const auto service_name = declare_parameter<std::string>("pct_plan_service", "/pct/plan");
     const auto path_topic = declare_parameter<std::string>("managed_path_topic", "/nav3/managed_path");
     const auto state_topic = declare_parameter<std::string>("state_topic", "/nav3/navigation_state");
+    bypass_checks_ = declare_parameter<bool>("bypass_checks", false);
+    bypass_max_task_duration_ = positive("bypass_max_task_duration_sec", 45.0);
+    start_z_override_enabled_ = declare_parameter<bool>("start_z_override_enabled", false);
+    start_z_override_m_ = declare_parameter<double>("start_z_override_m", 0.0);
+    if (start_z_override_enabled_ && !std::isfinite(start_z_override_m_)) {
+      throw std::invalid_argument("start_z_override_m must be finite when enabled");
+    }
     permission_timeout_ = positive("permission_timeout_sec", 1.0);
     status_timeout_ = positive("scan_status_timeout_sec", 1.0);
     execution_timeout_ = positive("scan_execution_timeout_sec", 1.0);
@@ -109,6 +116,10 @@ class NavigationManager : public rclcpp::Node {
         std::bind(&NavigationManager::onAccepted, this, std::placeholders::_1));
     timer_ = create_wall_timer(std::chrono::milliseconds(200), [this]() { tick(); });
     RCLCPP_INFO(get_logger(), "Navigation manager ready: action=%s path=%s", action_name_.c_str(), path_topic.c_str());
+    if (bypass_checks_) {
+      RCLCPP_WARN(get_logger(), "BYPASS_CHECKS enabled: readiness, TF age, path endpoint/start, and execution fault checks are skipped; task limit %.1f s",
+          bypass_max_task_duration_);
+    }
   }
 
  private:
@@ -128,7 +139,7 @@ class NavigationManager : public rclcpp::Node {
   geometry_msgs::msg::PoseStamped currentPose() const {
     const auto transform = tf_buffer_->lookupTransform(map_frame_, base_frame_, tf2::TimePointZero);
     const double age = (now() - rclcpp::Time(transform.header.stamp)).seconds();
-    if (!std::isfinite(age) || age < 0.0 || age > tf_max_age_)
+    if (!bypass_checks_ && (!std::isfinite(age) || age < 0.0 || age > tf_max_age_))
       throw std::runtime_error("map to base_link TF is stale or future dated");
     geometry_msgs::msg::PoseStamped pose;
     pose.header = transform.header;
@@ -141,6 +152,7 @@ class NavigationManager : public rclcpp::Node {
   }
 
   std::string readinessProblem() const {
+    if (bypass_checks_) return {};
     if (!permission_ || !fresh(permission_received_, permission_timeout_))
       return "localization permission is absent, false or expired";
     if (!status_ || !fresh(status_received_, status_timeout_))
@@ -192,6 +204,11 @@ class NavigationManager : public rclcpp::Node {
     try {
       auto request = std::make_shared<Plan::Request>();
       request->start = currentPose();
+      if (start_z_override_enabled_) {
+        RCLCPP_WARN(get_logger(), "PCT start height override: TF z=%.3f -> request z=%.3f",
+            request->start.pose.position.z, start_z_override_m_);
+        request->start.pose.position.z = start_z_override_m_;
+      }
       requested_start_ = request->start;
       request->goal = target_;
       pct_client_->async_send_request(request,
@@ -232,15 +249,18 @@ class NavigationManager : public rclcpp::Node {
         return;
       }
     }
-    if (distance(path.poses.back().pose.position, target_.pose.position) > endpoint_tolerance_) {
+    if (!bypass_checks_ &&
+        distance(path.poses.back().pose.position, target_.pose.position) > endpoint_tolerance_) {
       abortTask("PCT path endpoint differs too far from the requested goal");
       return;
     }
-    const auto current = currentPose();
-    if (distance(current.pose.position, requested_start_.pose.position) > max_start_motion_ ||
-        distance(path.poses.front().pose.position, current.pose.position) > endpoint_tolerance_) {
-      abortTask("robot moved during planning or PCT path start is inconsistent");
-      return;
+    if (!bypass_checks_) {
+      const auto current = currentPose();
+      if (distance(current.pose.position, requested_start_.pose.position) > max_start_motion_ ||
+          distance(path.poses.front().pose.position, current.pose.position) > endpoint_tolerance_) {
+        abortTask("robot moved during planning or PCT path start is inconsistent");
+        return;
+      }
     }
     path.header.stamp = now();
     baseline_path_id_ = status_ ? status_->path_id : 0;
@@ -264,7 +284,7 @@ class NavigationManager : public rclcpp::Node {
         rclcpp::Time(message.header.stamp) < rclcpp::Time(path_sent_stamp_)) return;
     if (phase_ == Phase::AwaitScan) {
       if (message.path_id == baseline_path_id_) return;
-      if (distance(message.goal, path_endpoint_) > endpoint_tolerance_) return;
+      if (!bypass_checks_ && distance(message.goal, path_endpoint_) > endpoint_tolerance_) return;
       scan_path_id_ = message.path_id;
       phase_ = Phase::Executing;
       phase_started_ = Clock::now();
@@ -274,15 +294,15 @@ class NavigationManager : public rclcpp::Node {
           static_cast<unsigned long long>(*scan_path_id_));
     }
     if (message.path_id != *scan_path_id_) {
-      abortTask("SCAN replaced the active path unexpectedly");
+      if (!bypass_checks_) abortTask("SCAN replaced the active path unexpectedly");
       return;
     }
     if (message.state == Status::GOAL_REACHED) {
       finishTask(true, "SCAN reports goal reached");
-    } else if (message.state == Status::LOCAL_PLAN_FAILED ||
+    } else if (!bypass_checks_ && (message.state == Status::LOCAL_PLAN_FAILED ||
                message.state == Status::GLOBAL_PATH_INVALID ||
                message.state == Status::LOCALIZATION_UNAVAILABLE ||
-               message.state == Status::DATA_STALE || message.state == Status::TF_CHANGED) {
+               message.state == Status::DATA_STALE || message.state == Status::TF_CHANGED)) {
       abortTask("SCAN stopped: " + message.reason);
     }
   }
@@ -331,29 +351,29 @@ class NavigationManager : public rclcpp::Node {
     }
     const auto elapsed = std::chrono::duration<double>(Clock::now() - phase_started_).count();
     const auto total = std::chrono::duration<double>(Clock::now() - task_started_).count();
-    if (total > max_task_duration_) {
+    if (total > (bypass_checks_ ? bypass_max_task_duration_ : max_task_duration_)) {
       abortTask("navigation task time limit exceeded");
       return;
     }
-    if (phase_ == Phase::Planning && elapsed > planning_timeout_) {
+    if (!bypass_checks_ && phase_ == Phase::Planning && elapsed > planning_timeout_) {
       abortTask("PCT planning timed out");
       return;
     }
-    if (phase_ == Phase::AwaitScan && elapsed > scan_ack_timeout_) {
+    if (!bypass_checks_ && phase_ == Phase::AwaitScan && elapsed > scan_ack_timeout_) {
       abortTask("SCAN did not acknowledge the managed path");
       return;
     }
-    if (phase_ == Phase::Executing && status_ &&
+    if (!bypass_checks_ && phase_ == Phase::Executing && status_ &&
         (status_->state == Status::WAITING_INPUT || status_->state == Status::WAITING_PATH) &&
         elapsed > scan_ack_timeout_) {
       abortTask("SCAN did not start executing the managed path");
       return;
     }
-    if (phase_ == Phase::Executing && !controller_has_tracked_ && elapsed > scan_ack_timeout_) {
+    if (!bypass_checks_ && phase_ == Phase::Executing && !controller_has_tracked_ && elapsed > scan_ack_timeout_) {
       abortTask("SCAN controller did not track the active path");
       return;
     }
-    if (phase_ == Phase::Executing && controller_has_tracked_ &&
+    if (!bypass_checks_ && phase_ == Phase::Executing && controller_has_tracked_ &&
         !fresh(last_tracking_, execution_loss_timeout_)) {
       abortTask("SCAN controller stopped tracking the active path");
       return;
@@ -387,6 +407,10 @@ class NavigationManager : public rclcpp::Node {
   double permission_timeout_, status_timeout_, execution_timeout_, execution_loss_timeout_, tf_max_age_;
   double scan_ack_timeout_, planning_timeout_, max_task_duration_, endpoint_tolerance_;
   double max_start_motion_;
+  double bypass_max_task_duration_;
+  bool bypass_checks_ = false;
+  bool start_z_override_enabled_ = false;
+  double start_z_override_m_ = 0.0;
   rclcpp::Client<Plan>::SharedPtr pct_client_;
   rclcpp_action::Server<Action>::SharedPtr action_server_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr managed_path_pub_;
