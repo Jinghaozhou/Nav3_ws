@@ -40,6 +40,8 @@ class _BringupConsoleFilter(logging.Filter):
     def filter(self, record):
         name = record.name
         if name.endswith(("-stdout", "-stderr")):
+            if any(level in record.getMessage() for level in ("[ERROR]", "[FATAL]")):
+                return not self.stopping
             return name.startswith((
                 "navigation_localizer-", "bbs_retriever-",
                 "bringup_status.py-",
@@ -245,16 +247,37 @@ def _launch(context):
         package="pct_planner", executable="pct_planner_node",
         name="pct_planner", output="screen", parameters=[pct_parameters],
     )
+    collision_window = float(value("scan_collision_window_sec"))
+    if not math.isfinite(collision_window) or collision_window < 0:
+        raise RuntimeError("scan_collision_window_sec must be finite and nonnegative")
+    if collision_window > 0:
+        localization_actions.append(Node(package="mid360_bringup", executable="local_map_window",
+            name="collision_map_window", output="screen", parameters=[{"use_sim_time": common_time == "true"}],
+            arguments=["--window-time", str(collision_window), "--tracking-window-time", str(collision_window),
+                       "--window-frames", str(max(30, math.ceil(collision_window * 15))),
+                       "--voxel", "0.1", "--rate", "5.0",
+                       "--in-topic", "/fast_lio/local_cloud", "--out-topic", "/fast_lio/collision_map",
+                       "--global-topic", "/fast_lio/collision_map_global",
+                       "--window-status-topic", "/fast_lio/collision_window_status"]))
     scan = include("scan_planner", "scan_planner.launch.py", {
         "use_sim_time": common_time,
         "path_topic": "/nav3/managed_path",
+        "local_map_topic": "/fast_lio/collision_map" if collision_window > 0 else "/fast_lio/local_map",
+        "planning_frame": "nav_odom" if value("scan_gravity_aligned") == "true" else "odom",
         "cmd_vel_topic": "/cmd_vel",
         "unknown_space_policy": value("scan_unknown_space_policy"),
         "check_local_collision": value("scan_check_local_collision"),
         "map_timeout": value("scan_map_timeout"),
+        "local_map_reliability": "reliable",
+        "override_config": value("scan_override_config"),
+        "require_task_heartbeat": "true",
+        "path_z_offset": value("scan_path_z_offset"),
         "require_localization_permission": "true",
         "localization_permission_topic": "/localization/navigation_allowed",
     })
+    if value("scan_gravity_aligned") == "true":
+        localization_actions.append(Node(package="nav3_bringup", executable="gravity_frame.py",
+                                         parameters=[{"use_sim_time": common_time == "true"}], output="screen"))
     manager = include("nav3_navigation_manager", "navigation_manager.launch.py", {
         "use_sim_time": common_time,
         "bypass_checks": value("manager_bypass_checks"),
@@ -366,6 +389,10 @@ def generate_launch_description():
         DeclareLaunchArgument("scan_check_local_collision", default_value="true",
                               choices=["true", "false"]),
         DeclareLaunchArgument("scan_map_timeout", default_value="1.5"),
+        DeclareLaunchArgument("scan_override_config", default_value=""),
+        DeclareLaunchArgument("scan_collision_window_sec", default_value="0.0"),
+        DeclareLaunchArgument("scan_gravity_aligned", default_value="false", choices=["true", "false"]),
+        DeclareLaunchArgument("scan_path_z_offset", default_value="0.0"),
         DeclareLaunchArgument("chassis_sdk_root", default_value=str(chassis_root)),
         DeclareLaunchArgument("chassis_config", default_value=str(
             chassis_root / "src/go2control/config/go2control.yaml")),

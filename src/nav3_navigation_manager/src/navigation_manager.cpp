@@ -57,6 +57,7 @@ class NavigationManager : public rclcpp::Node {
     const auto service_name = declare_parameter<std::string>("pct_plan_service", "/pct/plan");
     const auto path_topic = declare_parameter<std::string>("managed_path_topic", "/nav3/managed_path");
     const auto state_topic = declare_parameter<std::string>("state_topic", "/nav3/navigation_state");
+    const auto heartbeat_topic = declare_parameter<std::string>("task_heartbeat_topic", "/nav3/task_heartbeat");
     bypass_checks_ = declare_parameter<bool>("bypass_checks", false);
     bypass_max_task_duration_ = positive("bypass_max_task_duration_sec", 45.0);
     start_z_override_enabled_ = declare_parameter<bool>("start_z_override_enabled", false);
@@ -87,6 +88,7 @@ class NavigationManager : public rclcpp::Node {
         path_topic, rclcpp::QoS(1).reliable().transient_local());
     state_pub_ = create_publisher<std_msgs::msg::String>(
         state_topic, rclcpp::QoS(1).reliable().transient_local());
+    heartbeat_pub_ = create_publisher<std_msgs::msg::Bool>(heartbeat_topic,rclcpp::QoS(1).reliable());
     permission_sub_ = create_subscription<std_msgs::msg::Bool>(
         permission_topic, rclcpp::QoS(1).reliable(),
         [this](std_msgs::msg::Bool::ConstSharedPtr message) {
@@ -197,6 +199,9 @@ class NavigationManager : public rclcpp::Node {
   void onAccepted(const std::shared_ptr<GoalHandle> goal_handle) {
     reserved_ = false;
     active_ = goal_handle;
+    std_msgs::msg::Bool heartbeat;
+    heartbeat.data=true;
+    heartbeat_pub_->publish(heartbeat);
     target_ = goal_handle->get_goal()->target;
     phase_ = Phase::Planning;
     task_started_ = phase_started_ = Clock::now();
@@ -260,6 +265,13 @@ class NavigationManager : public rclcpp::Node {
           distance(path.poses.front().pose.position, current.pose.position) > endpoint_tolerance_) {
         abortTask("robot moved during planning or PCT path start is inconsistent");
         return;
+      }
+      // PCT snaps endpoints to its elevation/grid representation. The action
+      // still promises the requested physical XYZ; connect the last short
+      // segment and let SCAN collision-check it before execution.
+      if (distance(path.poses.back().pose.position,target_.pose.position)>1e-6) {
+        if(path.poses.size()>=200000) {abortTask("PCT path has no capacity for the requested endpoint");return;}
+        path.poses.push_back(target_);
       }
     }
     path.header.stamp = now();
@@ -335,6 +347,9 @@ class NavigationManager : public rclcpp::Node {
   void abortTask(const std::string &message) { finishTask(false, message); }
 
   void tick() {
+    std_msgs::msg::Bool heartbeat;
+    heartbeat.data=static_cast<bool>(active_);
+    heartbeat_pub_->publish(heartbeat);
     if (!active_) {
       const auto problem = readinessProblem();
       publishState(problem.empty() ? "READY" : "WAITING: " + problem);
@@ -415,6 +430,7 @@ class NavigationManager : public rclcpp::Node {
   rclcpp_action::Server<Action>::SharedPtr action_server_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr managed_path_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr state_pub_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr heartbeat_pub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr permission_sub_;
   rclcpp::Subscription<Status>::SharedPtr status_sub_;
   rclcpp::Subscription<Execution>::SharedPtr execution_sub_;

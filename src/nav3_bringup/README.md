@@ -6,6 +6,11 @@
 
 ## 使用
 
+`/home/zwz/Nav3_ws` 本机实机部署使用 `scripts/start_go2_nav3.sh`，并在其他终端
+加载 `scripts/source_go2_env.bash`，具体命令见[脚本说明](../../scripts/README.md)。
+该主机入口使用 `enp130s0`、严格定位许可、管理器心跳、重力对齐规划帧及近期碰撞窗口；
+本页其余命令保留通用默认参数。
+
 先在主工作空间完成 `scripts/prepare_non_ros.sh` 和 `scripts/build_ros.sh`，然后在新终端执行：
 
 ```bash
@@ -94,6 +99,10 @@ ros2 launch nav3_bringup nav3.launch.py initialization_source:=seeds initial_reg
 | `scan_unknown_space_policy` | `free_inside_bounds` | SCAN 在局部地图边界内把未观测空间视为自由；`occupied` 将其视为占据。 |
 | `scan_check_local_collision` | `true` | SCAN 局部点云碰撞检查；`false` 仅用于已确认通畅的实机联调。 |
 | `scan_map_timeout` | `1.5` | SCAN 局部地图输入超时秒数。 |
+| `scan_override_config` | 空 | SCAN 规划器和控制器的附加参数文件。 |
+| `scan_gravity_aligned` | `false` | 从 FAST-LIO 重力向量固定 `odom → nav_odom`，SCAN 改在 `nav_odom` 中规划。 |
+| `scan_collision_window_sec` | `0.0` | 大于零时另建近期碰撞窗口，5 Hz 发布 `/fast_lio/collision_map`，不改变定位长窗口。 |
+| `scan_path_z_offset` | `0.0` | SCAN 对参考路径显式施加的高度校准量，默认不加偏移。 |
 | `chassis_sdk_root` | 主工作空间 `modules/Nav3_Chassis_ws` | 含 `vendor/` 的 SDK 工作空间根目录。 |
 | `chassis_config` | 底盘子模块 `config/go2control.yaml` | 速度限幅、超时等桥接参数。 |
 | `pct_startup_timeout_sec` | `180` | 等待 PCT 服务及地图预热的总时限。 |

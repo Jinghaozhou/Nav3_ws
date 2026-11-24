@@ -13,6 +13,9 @@
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
   <exec_depend>pct_planner_interfaces</exec_depend>
   <exec_depend>mid360_bringup</exec_depend>
   <exec_depend>kiss_matcher_localization</exec_depend>

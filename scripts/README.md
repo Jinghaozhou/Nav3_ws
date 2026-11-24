@@ -1,5 +1,75 @@
 # 构建与运行脚本
 
+## zwz 主机 Go2 部署入口
+
+本机网卡为 `enp130s0=192.168.123.5/24`（Go2）和
+`enxe466e592e70a=192.168.1.5/24`（MID360）。两条持久连接分别为
+`nav3-go2`、`nav3-devices`，默认互联网路由仍由 Wi-Fi 提供。
+板载 RTL8125 使用带 Secure Boot 签名的 `r8125 9.016.01` DKMS 模块。
+
+```bash
+# 启动完整实机链路；不会自动发送导航目标
+/home/zwz/Nav3_ws/scripts/start_go2_nav3.sh visualization:=true
+
+# 每个录包、诊断、发目标的终端都加载此环境
+source /home/zwz/Nav3_ws/scripts/source_go2_env.bash
+ros2 launch nav3_bag_recorder record.launch.py profile:=diagnostic
+
+# 另一个同环境终端：当前位置前方 1 米，最多 45 秒
+python3 /home/zwz/Nav3_ws/scripts/navigate_forward.py --distance 1 --timeout 45
+```
+
+短任务客户端等待 `READY`，用新鲜 TF 生成 `map` 目标；超时、Ctrl+C、反向或明显侧偏会请求取消。
+`--target X Y Z` 可继续一个距离当前位置不超过 1 米的既有终点。
+实机链路保留碰撞检查、严格定位许可、输入超时和管理器心跳撤销保护；
+控制限幅为 `(vx,vy,wz)=(0.15,0.10,0.25)`，单位为 m/s、m/s、rad/s。
+规划帧为重力对齐的 `nav_odom`，定位用长窗口，碰撞用 2 秒/5 Hz 窗口。
+固定规划帧须与 FAST-LIO 一起重启，设备断电或里程计重置后不要复用旧帧。
+
+本机环境统一为 ROS 域 193、仅本机 ROS 通信，并使用 `fastdds_local.xml`
+的回环 UDP 配置与较大的发现端口范围；Go2 SDK 独立绑定实体网卡，不使用 ROS 域。
+这些值可通过 `NAV3_ROS_DOMAIN_ID`、`NAV3_LOCALHOST_ONLY`、`NAV3_DDS_PROFILE` 显式覆盖。
+只设 `ROS_DOMAIN_ID` 不能覆盖此主机专用入口。系统 socket 缓冲上限配置见
+`/etc/sysctl.d/90-nav3-dds.conf`（两项上限均为 8 MiB）。
+
+录包完成后先 Ctrl+C，确认 `Recording stopped` 再读取 SQLite；运行中直接查询数据库会阻塞写入。
+原始点云、地图、模型和构建结果仍被 Git 忽略，部署改动及实测边界见主仓库 `report/联调记录.md`。
+
+## 带进程组清理的统一启动
+
+```bash
+python3 scripts/run_nav3.py driver:=false chassis:=true
+```
+
+启动器自动加载本工作空间环境，把后续参数原样传给 `nav3.launch.py`。
+`Ctrl+C`、向启动器发送 `SIGTERM`/`SIGHUP`，或 launch 自行结束时，
+均清理本次启动的整个进程组；先给 ROS 15 秒正常退出，再对剩余进程发送
+TERM/KILL。只清理本次进程组，不按名称结束其他 ROS 进程。
+上例关闭雷达驱动、启用底盘空跑；实机参数仍须显式指定。
+若后台运行，应把停止信号发给这个启动器的 PID，不能仅结束其 launch 子进程。
+强制杀死启动器本身（SIGKILL）不经过清理逻辑。
+
+## 传感器时间戳诊断
+
+在已加载主工作空间环境、传感器正在运行的同一 ROS 域中执行：
+
+```bash
+source /home/zwz/Nav3_ws/scripts/source_env.bash
+python3 scripts/diagnose_sensor_timing.py \
+  --duration 60 --warmup 10 --output log/timing/sensor_chain.csv
+```
+
+脚本只订阅，不发布控制消息。CSV 逐条记录原始雷达、IMU、FAST-LIO
+里程计、配准点云、局部地图和 `odom → base_link` TF 的消息时间与接收时间；
+同名 `.summary.json` 汇总预热后的接收频率、消息年龄中位数/P95/最大值、
+最大接收间隔和时间戳回退次数。输出 CSV 必须使用新文件名。
+缺少任一链路的样本时退出码为 1，仍保留已有数据。
+
+雷达点云时间为扫描起点，FAST-LIO 输出通常为扫描终点，因此二者消息年龄
+会有约一个扫描周期的正常差异。将原始雷达/IMU 与里程计、TF 的年龄对比，
+再结合 `timing_diagnostics:=true` 产生的局部地图发布日志，可定位延迟出现在哪一段。
+接收频率反映此探针回调观测，不能单独作为硬件采样频率的结论。
+
 ## 非 ROS 依赖准备
 
 在主工作空间根目录执行：
