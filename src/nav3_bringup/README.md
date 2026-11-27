@@ -113,10 +113,23 @@ ros2 launch nav3_bringup nav3.launch.py initialization_source:=seeds initial_reg
 | `scan_collision_window_sec` | `0.0` | 大于零时另建近期碰撞窗口，5 Hz 发布 `/fast_lio/collision_map`，不改变定位长窗口。 |
 | `scan_path_z_offset` | `0.0` | SCAN 对参考路径显式施加的高度校准量，默认不加偏移。 |
 | `pct_path_z_offset` | `0.0` | 在 PCT 输出端将原生地面上方 0.5 m 的路径参考平移到机器人参考点；不改变地图或楼层选择，不与 SCAN 偏移重复叠加。 |
+| `scan_ground_filter` | `false` | 本次平地场景使用的地面分离；要求重力帧和近期碰撞窗口。支撑平面经三帧确认后局部跟踪，仅移除其附近 2.5 cm 点，其他点全部保留。 |
+| `scan_ground_fit_radius` | `4.0` | 地面拟合候选邻域半径（米）；本轮 Go2 TF 实机测试显式使用 `3.0`。不限制障碍输出范围。 |
 | `chassis_sdk_root` | 主工作空间 `modules/Nav3_Chassis_ws` | 含 `vendor/` 的 SDK 工作空间根目录。 |
 | `chassis_config` | 底盘子模块 `config/go2control.yaml` | 速度限幅、超时等桥接参数。 |
 | `pct_startup_timeout_sec` | `180` | 等待 PCT 服务及地图预热的总时限。 |
 
+`scan_ground_filter:=true` 增加 `/fast_lio/collision_obstacles` 和
+`/fast_lio/ground_filter_status`，SCAN 使用前者，原始碰撞点云与定位点云保留。
+平面拟合要求足够点数、水平覆盖、残差和重力方向一致；初始化失败或后续支撑点不足时不输出新快照，
+由原有输入超时保护停车。此模式针对本轮近似平地，尚不作为坡道、台阶或多楼层地面分割的验收结果。
+地面拟合的 0.44 m 高度先验沿用原 MID360 IMU 参考点：Go2 模式自动给滤波器设置
+`floor_reference_frame=imu_link`，旧模式使用 `base_link`。SCAN 的碰撞参考点仍为 Go2 `base_link`。
+局部平面更新有突变门限并平滑处理；新拟合质量不足时，仅在旧平面仍有足够实时支撑的条件下保留旧模型。
+手动验证：`python3 -m unittest discover -s src/nav3_bringup/test -v`。
+
 启动包将定位局部地图设为 `/fast_lio/local_map`；BBS 模式使用传感器实验入口中的连续定位配置，固定候选模式沿用定位模块配置。PCT 使用相同 PCD；SCAN 的路径输入固定为 `/nav3/managed_path`，定位许可输入为 `/localization/navigation_allowed`，速度输出为 `/cmd_vel`；底盘桥接启用时订阅 `/cmd_vel`。传感器自身的旧关键帧候选发布器保持关闭，BBS 检索器由定位实验入口单独启动。PCT 的 `/pct/publish_cost_map` 成功后才启动导航任务管理器和已启用的底盘桥接；预热失败则结束联合启动。管理器仍需等待首次定位许可、有效 TF 和 SCAN 状态，才会在 `/nav3/navigation_state` 报告 `READY` 并接受 `/nav3/navigate_to_pose` 目标。
 
-space_10 的独立 BBS 实验已完成首次定位；本次接入标准 bringup 后仍需验证联合启动、四模块闭环和实体底盘。实机接入前还需要核对坐标参考点、速度方向和底盘自身的命令超时停车机制。
+space_10 已在 Go2 名义安装 TF 下完成一次前方 1 米实机闭环；参数与复现命令见
+[脚本说明](../../scripts/README.md#jh-主机-go2-tf-实机测试)，测量与限制见主仓库实验 29。
+本轮保留严格定位许可、局部碰撞检查及底盘超时停车；重复运行、安装标定和长期稳定性仍待验证。

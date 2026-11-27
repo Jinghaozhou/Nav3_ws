@@ -10,6 +10,8 @@ groups:
     - /fast_lio/local_map
     - /fast_lio/local_map_global
     - /fast_lio/collision_map
+    - /fast_lio/collision_obstacles
+    - /fast_lio/ground_filter_status
     - /fast_lio/collision_window_status
     - /fast_lio/health
     - /fast_lio/window_status

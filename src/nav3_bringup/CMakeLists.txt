@@ -6,6 +6,7 @@ find_package(ament_cmake REQUIRED)
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME}
   PATTERN "__pycache__" EXCLUDE)
 install(PROGRAMS scripts/prewarm_pct.py scripts/bringup_status.py scripts/gravity_frame.py
+  scripts/collision_ground_filter.py
   DESTINATION lib/${PROJECT_NAME})
 
 ament_package()

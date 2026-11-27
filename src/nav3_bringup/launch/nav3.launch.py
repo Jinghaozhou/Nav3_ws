@@ -256,6 +256,12 @@ def _launch(context):
     collision_window = float(value("scan_collision_window_sec"))
     if not math.isfinite(collision_window) or collision_window < 0:
         raise RuntimeError("scan_collision_window_sec must be finite and nonnegative")
+    ground_filter = value("scan_ground_filter") == "true"
+    ground_fit_radius = float(value("scan_ground_fit_radius"))
+    if not math.isfinite(ground_fit_radius) or ground_fit_radius <= 0:
+        raise RuntimeError("scan_ground_fit_radius must be finite and positive")
+    if ground_filter and (collision_window <= 0 or value("scan_gravity_aligned") != "true"):
+        raise RuntimeError("scan_ground_filter requires the collision window and gravity-aligned frame")
     if collision_window > 0:
         localization_actions.append(Node(package="mid360_bringup", executable="local_map_window",
             name="collision_map_window", output="screen", parameters=[{"use_sim_time": common_time == "true"}],
@@ -265,10 +271,17 @@ def _launch(context):
                        "--in-topic", "/fast_lio/local_cloud", "--out-topic", "/fast_lio/collision_map",
                        "--global-topic", "/fast_lio/collision_map_global",
                        "--window-status-topic", "/fast_lio/collision_window_status"]))
+    if ground_filter:
+        localization_actions.append(Node(package="nav3_bringup", executable="collision_ground_filter.py",
+            parameters=[{"use_sim_time": common_time == "true",
+                         "floor_reference_frame": "imu_link" if value("robot_model") == "go2" else "base_link",
+                         "floor_fit_radius": ground_fit_radius}],
+            output="screen"))
     scan = include("scan_planner", "scan_planner.launch.py", {
         "use_sim_time": common_time,
         "path_topic": "/nav3/managed_path",
-        "local_map_topic": "/fast_lio/collision_map" if collision_window > 0 else "/fast_lio/local_map",
+        "local_map_topic": "/fast_lio/collision_obstacles" if ground_filter else (
+            "/fast_lio/collision_map" if collision_window > 0 else "/fast_lio/local_map"),
         "planning_frame": "nav_odom" if value("scan_gravity_aligned") == "true" else "odom",
         "cmd_vel_topic": "/cmd_vel",
         "unknown_space_policy": value("scan_unknown_space_policy"),
@@ -401,6 +414,8 @@ def generate_launch_description():
         DeclareLaunchArgument("scan_gravity_aligned", default_value="false", choices=["true", "false"]),
         DeclareLaunchArgument("scan_path_z_offset", default_value="0.0"),
         DeclareLaunchArgument("pct_path_z_offset", default_value="0.0"),
+        DeclareLaunchArgument("scan_ground_filter", default_value="false", choices=["true", "false"]),
+        DeclareLaunchArgument("scan_ground_fit_radius", default_value="4.0"),
         DeclareLaunchArgument("chassis_sdk_root", default_value=str(chassis_root)),
         DeclareLaunchArgument("chassis_config", default_value=str(
             chassis_root / "src/go2control/config/go2control.yaml")),

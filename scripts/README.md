@@ -1,5 +1,28 @@
 # 构建与运行脚本
 
+## JH 主机 Go2 TF 实机测试
+
+新 TF 下已完成一次前方 1 米闭环（实验 29）。以下参数只对应本轮安装状态和近似平地，
+路径输出高度补偿为实机预检测得的 `-0.333 m`，地面拟合邻域为 3 m。
+实测使用的本机细栅格配置及其配套 SCAN 搜索范围修改未纳入本轮提交，
+因此下列命令只用于静止检查 TF 和地面滤波，不作为完整运动测试的复现命令：
+
+```bash
+source scripts/source_go2_env.bash
+OPENBLAS_NUM_THREADS=1 python3 scripts/run_nav3.py \
+  chassis:=false robot_model:=go2 \
+  localization_permission_after_initialization:=false manager_bypass_checks:=false \
+  scan_check_local_collision:=true scan_gravity_aligned:=true scan_collision_window_sec:=2.0 \
+  pct_path_z_offset:=-0.333 scan_ground_filter:=true scan_ground_fit_radius:=3.0 \
+  timing_diagnostics:=true
+```
+
+`OPENBLAS_NUM_THREADS=1` 限制本轮 Python 地面拟合等小矩阵计算的 BLAS 线程数；
+3 m 参数只限定拟合候选邻域，所有输入点仍参与后续障碍输出，原有拟合质量门限保留。
+定位与 SDK 位移仍有差异，地面滤波存在短暂拒绝快照，不能据一次到达认定全部联调问题已解决。
+本机复核文件为 `log/go2_tf_full_20261126/verification.json`，不随仓库发布。
+可共享的实测结果与已知问题见[联调记录](../report/联调记录.md)实验 29。
+
 ## zwz 主机 Go2 部署入口
 
 本机网卡为 `enp130s0=192.168.123.5/24`（Go2）和
