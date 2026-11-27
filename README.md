@@ -2,7 +2,7 @@
 
 Nav3 将传感器里程计、全局定位、三维全局规划和局部规划组织为四个独立的 ROS 2 Humble 工作空间，另以独立工作空间保存 Go2 底盘控制模块。模块间通过 ROS 2 Topic、Service 和 TF 交换数据，不直接调用彼此的算法源码。本仓库用 Git 子模块固定各模块版本，并保存集成时使用的数据目录。
 
-**当前状态：**四个导航模块和 Go2 底盘工作空间已纳入子模块；主仓库已有独立的 `nav3_navigation_manager` 任务管理包、`nav3_bringup` 联合启动包、`nav3_visualization` 可视化包和 `nav3_bag_recorder` 录包包。`scripts/prepare_non_ros.sh` 准备导航模块原生依赖，`scripts/build_ros.sh` 统一构建五个子模块和主仓库的 ROS 包。bringup 支持按参数启动 Go2 速度桥接，实机闭环仍需联调验证。
+**当前状态：**四个导航模块和 Go2 底盘工作空间已纳入子模块；主仓库已有独立的 `nav3_navigation_manager` 任务管理包、`nav3_bringup` 联合启动包、`nav3_visualization` 可视化包和 `nav3_bag_recorder` 录包包。`scripts/prepare_non_ros.sh` 准备导航模块原生依赖，`scripts/build_ros.sh` 统一构建五个子模块和主仓库的 ROS 包。bringup 支持按参数启动 Go2 速度桥接，已在 Go2 名义安装 TF 下完成一次前方 1 米实机闭环；安装标定、重复运行与长期稳定性仍待验证。
 
 联调现状见[联调记录](report/联调记录.md)和[问题排查与解决建议](report/三维导航系统联调问题排查与解决建议.md)。面向汇报的概览见[主仓库架构与联调进度说明](report/Nav3主仓库架构与联调进度说明.md)，团队交接方式见[模块协作与主仓库联调流程](report/Nav3模块协作与主仓库联调流程.md)。
 
@@ -47,7 +47,7 @@ MID360 + IMU ──> FAST-LIO ── odom / local_map ──> 定位 ── map�
                                                └── cmd_vel / status       └── PCT 规划服务 <── 全局 PCD
 ```
 
-核心 TF 链为 `map → odom → base_link → lidar`：定位发布 `map → odom`，FAST-LIO 发布 `odom → base_link`，传感器启动包发布机体到 IMU、雷达的静态外参。每段 TF 只应有一个发布者。当前 FAST-LIO 的 `base_link` 位于 **IMU 原点**；若机器人碰撞或底盘控制参考点不同，需要真实安装外参及相应的 SCAN `robot_frame`、`control_frame` 配置。
+联合启动默认使用 Go2 TF 链 `map → odom → imu_link → base_link → lidar`：定位发布 `map → odom`，FAST-LIO 发布 `odom → imu_link`，传感器启动包复合 IMU 内部外参与 Go2 安装参数，发布两段静态 TF。`base_link` 对应 Unitree Go2 URDF 的 `base` 原点，x 前、y 左、z 上；`lidar` 与原始点云帧名一致。安装初值为平移 `[0.207993, 0, 0.152959]` m、俯仰 `+20°`，尚未实物标定。每段 TF 只有一个发布者，FAST-LIO 的内部外参和世界点云计算保持原样。传感器独立建图入口仍默认使用旧的 IMU 原点定义；联合启动可用 `robot_model:=imu` 回退。详见[传感器 TF 说明](modules/Nav3_Sensor_ws/src/mid360_bringup/README.md#tf-和-frame-定义)。
 
 ## 跨模块接口
 
@@ -57,7 +57,7 @@ MID360 + IMU ──> FAST-LIO ── odom / local_map ──> 定位 ── map�
 | --- | --- | --- | --- |
 | `/lidar_points` | `livox_ros_driver2/msg/CustomMsg` | MID360 → FAST-LIO | 带逐点时间的原始点云，不是标准 `PointCloud2`。 |
 | `/imu` | `sensor_msgs/msg/Imu` | MID360 → FAST-LIO | `imu_link` 中的惯性测量。 |
-| `/fast_lio/odom` | `nav_msgs/msg/Odometry` | FAST-LIO → SCAN | `header.frame_id=odom`、`child_frame_id=base_link`。 |
+| `/fast_lio/odom` | `nav_msgs/msg/Odometry` | FAST-LIO → SCAN | 联合启动默认 `header.frame_id=odom`、`child_frame_id=imu_link`；SCAN 通过 TF 换算到 Go2 `base_link`。 |
 | `/fast_lio/local_cloud` | `sensor_msgs/msg/PointCloud2` | FAST-LIO → 可选关键帧检索器 | `odom` 中配准后的**当前帧**，不能代替完整局部地图。 |
 | `/fast_lio/local_map` | `sensor_msgs/msg/PointCloud2` | FAST-LIO → 定位、SCAN | `odom` 中的完整滑动窗口快照，默认约 1 Hz。 |
 | `/fast_lio/local_map_global` | `sensor_msgs/msg/PointCloud2` | FAST-LIO → 定位 | 始终使用较长窗口，供可选初始化与恢复。 |

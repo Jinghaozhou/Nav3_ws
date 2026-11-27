@@ -4,6 +4,14 @@
 
 后续 space_10 导航联调的固定目标为 `map` 坐标 `(-4.0, 30.0, 5.542)`；请求文件与手动发送方法见[导航任务管理器说明](../nav3_navigation_manager/README.md#space_10-固定测试目标)。联合启动不会自动发送该目标。
 
+默认 `robot_model:=go2`，TF 链为 `map → odom → imu_link → base_link → lidar`。
+`base_link` 使用 Unitree Go2 机体原点；雷达安装参数位于传感器包 `config/go2_mount.yaml`，
+初值为 `[0.207993, 0, 0.152959]` m 和俯仰 `+20°`，尚未实物标定。
+FAST-LIO 输出的里程计 child 为 `imu_link`，SCAN 通过 TF 换算到机体原点，
+BBS 检索器自动接入新帧名。`robot_model:=imu` 可恢复历史 IMU 原点模式。
+旧 bag 回放时只提供 `/lidar_points` 和 `/imu`，由新节点重新生成里程计和 TF。
+修改参考点后，实机测试还需复核碰撞包络、路径高度及历史固定定位候选的物理参考点。
+
 ## 使用
 
 `/home/zwz/Nav3_ws` 本机实机部署使用 `scripts/start_go2_nav3.sh`，并在其他终端
@@ -83,6 +91,7 @@ ros2 launch nav3_bringup nav3.launch.py initialization_source:=seeds initial_reg
 | `region_seed_file` | `auto` | BBS 模式下 `space_10` 自动使用动态候选区域配置；`space_2` 使用现有区域配置。 |
 | `region_multistart_enabled` | `auto` | 自动根据候选文件启用；也可强制开启或关闭。 |
 | `driver` | `true` | 是否启动实体 MID360 驱动。 |
+| `robot_model` | `go2` | `go2` 使用 Go2 机体原点和安装外参；`imu` 恢复历史帧定义。 |
 | `use_sim_time` | `false` | 统一传给各节点的仿真时间参数。 |
 | `timing_diagnostics` | `false` | 记录局部地图发布、定位接收及导航许可检查的时间诊断 CSV。 |
 | `localization_permission_after_initialization` | `true` | 首次定位成功后持续许可；`false` 恢复严格的新鲜度检查。 |
@@ -103,6 +112,7 @@ ros2 launch nav3_bringup nav3.launch.py initialization_source:=seeds initial_reg
 | `scan_gravity_aligned` | `false` | 从 FAST-LIO 重力向量固定 `odom → nav_odom`，SCAN 改在 `nav_odom` 中规划。 |
 | `scan_collision_window_sec` | `0.0` | 大于零时另建近期碰撞窗口，5 Hz 发布 `/fast_lio/collision_map`，不改变定位长窗口。 |
 | `scan_path_z_offset` | `0.0` | SCAN 对参考路径显式施加的高度校准量，默认不加偏移。 |
+| `pct_path_z_offset` | `0.0` | 在 PCT 输出端将原生地面上方 0.5 m 的路径参考平移到机器人参考点；不改变地图或楼层选择，不与 SCAN 偏移重复叠加。 |
 | `chassis_sdk_root` | 主工作空间 `modules/Nav3_Chassis_ws` | 含 `vendor/` 的 SDK 工作空间根目录。 |
 | `chassis_config` | 底盘子模块 `config/go2control.yaml` | 速度限幅、超时等桥接参数。 |
 | `pct_startup_timeout_sec` | `180` | 等待 PCT 服务及地图预热的总时限。 |

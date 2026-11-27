@@ -60,7 +60,8 @@ python3 scripts/diagnose_sensor_timing.py \
 ```
 
 脚本只订阅，不发布控制消息。CSV 逐条记录原始雷达、IMU、FAST-LIO
-里程计、配准点云、局部地图和 `odom → base_link` TF 的消息时间与接收时间；
+里程计、配准点云、局部地图和 FAST-LIO 动态 TF 的消息时间与接收时间；
+Go2 模式记录 `odom → imu_link`，历史模式记录 `odom → base_link`。
 同名 `.summary.json` 汇总预热后的接收频率、消息年龄中位数/P95/最大值、
 最大接收间隔和时间戳回退次数。输出 CSV 必须使用新文件名。
 缺少任一链路的样本时退出码为 1，仍保留已有数据。
@@ -136,3 +137,27 @@ ros2 pkg prefix go2control
 ```
 
 脚本本身按所在位置计算主目录；如果工作空间被移动，修改上面示例命令的路径即可。统一环境加载 ROS 2、PCT 虚拟环境、主目录的 `install/` 和运行时原生库路径，并将 `PCT_MAP_DIR` 设为主目录的 `data/maps/`。联合启动由 `nav3_bringup` 显式传入地图路径，使用方式见[统一启动说明](../src/nav3_bringup/README.md)。
+
+## MID360–Go2 TF 回放验收
+
+主仓库联合启动默认使用 Go2 原点。用已有原始输入比较旧 IMU 模式与新 Go2 模式：
+
+```bash
+source scripts/source_env.bash
+ROS_DOMAIN_ID=89 /usr/bin/python3 scripts/validate_go2_mount.py \
+  --bag data/bags/wide_joint_repeat_20261124 --seconds 25
+/usr/bin/python3 -m unittest discover \
+  -s modules/Nav3_Sensor_ws/src/mid360_bringup/test -v
+ROS_DOMAIN_ID=90 /usr/bin/python3 -m unittest discover \
+  -s modules/Nav3_Sensor_ws/tools/mid360_lidar/tests -p test_bbs_async.py -v
+ROS_DOMAIN_ID=91 /usr/bin/python3 -m unittest discover \
+  -s src/nav3_bringup/test -p test_go2_scan_input.py -v
+```
+
+脚本顺序启动三次无驱动的传感器回放（旧模式两次、新模式一次），每次默认 25 秒，不启动底盘、不发送导航目标。
+只播放 `/lidar_points` 和 `/imu`，重建 `/clock`，不播放 bag 中的旧 TF 与派生数据。
+临时配置开启完整当前帧点云以核对机体/世界点一致性，关闭累计地图与 PCD 保存以减少开销；
+不修改原传感器配置。检查 IMU 轨迹差异小于 2 mm / 0.05°（同时量化旧模式自身的重复回放差异）、静态 TF 父子关系正确、
+世界点云无重复变换、局部地图持续发布。结果及进程日志保存在 Git 忽略的
+`log/go2_mount_validation/`，成功时生成 `result.json`。
+这项测试验证软件几何与数据接口，实物安装精度和机器人运动方向需现场验证。

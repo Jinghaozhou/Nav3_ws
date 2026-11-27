@@ -54,8 +54,8 @@ class TimingProbe(Node):
 
     def on_tf(self, message):
         for transform in message.transforms:
-            if transform.header.frame_id == 'odom' and transform.child_frame_id == 'base_link':
-                self.record('/tf:odom->base_link', transform)
+            if transform.header.frame_id == 'odom' and transform.child_frame_id in ('base_link', 'imu_link'):
+                self.record('/tf:odom->' + transform.child_frame_id, transform)
 
     def record(self, topic, message):
         ros_ns = self.get_clock().now().nanoseconds
@@ -115,7 +115,8 @@ def main():
         print(result)
     return 0 if all(topic in summary for topic in (
         '/lidar_points', '/imu', '/fast_lio/odom', '/fast_lio/local_cloud',
-        '/fast_lio/local_map', '/tf:odom->base_link')) else 1
+        '/fast_lio/local_map')) and any(topic in summary for topic in (
+            '/tf:odom->base_link', '/tf:odom->imu_link')) else 1
 
 
 if __name__ == '__main__':

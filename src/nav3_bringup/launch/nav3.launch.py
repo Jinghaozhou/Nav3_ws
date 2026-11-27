@@ -130,6 +130,9 @@ def _launch(context):
     timeout = float(value("pct_startup_timeout_sec"))
     if not math.isfinite(timeout) or timeout <= 0:
         raise RuntimeError("pct_startup_timeout_sec 必须为正数")
+    pct_path_z_offset = float(value("pct_path_z_offset"))
+    if not math.isfinite(pct_path_z_offset):
+        raise RuntimeError("pct_path_z_offset must be finite")
     if value("driver") == "true" and value("use_sim_time") == "true":
         raise RuntimeError("实体 MID360 驱动不可与 use_sim_time:=true 同时启动")
     chassis_enabled = value("chassis") == "true"
@@ -158,6 +161,7 @@ def _launch(context):
     sensor = include("mid360_bringup", "mid360_mapping.launch.py", {
         "driver": value("driver"), "use_sim_time": common_time,
         "rviz": value("rviz"), "keyframe_candidates": "false",
+        "robot_model": value("robot_model"),
         "local_map_timing_csv": str(timing_dir / "local_map_publish.csv") if timing_dir else "",
     })
     if initialization_source == "bbs":
@@ -198,6 +202,7 @@ def _launch(context):
         retriever = ExecuteProcess(
             cmd=["/usr/bin/python3", str(retriever_script),
                  "--config", str(bbs_config), "--map", str(map_file),
+                 "--odom-body-frame", "imu_link" if value("robot_model") == "go2" else "base_link",
                  "--ros-args", "-p", f"use_sim_time:={common_time}"],
             name="bbs_retriever",
             output="screen",
@@ -242,6 +247,7 @@ def _launch(context):
         "map": map_file.name,
         "map_dir": str(map_file.parent),
         "use_sim_time": common_time == "true",
+        "path_z_offset": pct_path_z_offset,
     })
     pct = Node(
         package="pct_planner", executable="pct_planner_node",
@@ -367,6 +373,7 @@ def generate_launch_description():
         DeclareLaunchArgument("region_seed_file", default_value="auto"),
         DeclareLaunchArgument("region_multistart_enabled", default_value="auto"),
         DeclareLaunchArgument("driver", default_value="true", choices=["true", "false"]),
+        DeclareLaunchArgument("robot_model", default_value="go2", choices=["imu", "go2"]),
         DeclareLaunchArgument("use_sim_time", default_value="false", choices=["true", "false"]),
         DeclareLaunchArgument("timing_diagnostics", default_value="false", choices=["true", "false"]),
         DeclareLaunchArgument("localization_permission_after_initialization", default_value="true",
@@ -393,6 +400,7 @@ def generate_launch_description():
         DeclareLaunchArgument("scan_collision_window_sec", default_value="0.0"),
         DeclareLaunchArgument("scan_gravity_aligned", default_value="false", choices=["true", "false"]),
         DeclareLaunchArgument("scan_path_z_offset", default_value="0.0"),
+        DeclareLaunchArgument("pct_path_z_offset", default_value="0.0"),
         DeclareLaunchArgument("chassis_sdk_root", default_value=str(chassis_root)),
         DeclareLaunchArgument("chassis_config", default_value=str(
             chassis_root / "src/go2control/config/go2control.yaml")),
